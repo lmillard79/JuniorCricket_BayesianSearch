@@ -7,40 +7,81 @@ https://bnjca.org.au/wp-content/uploads/2026/07/Quick-Reference-Rules.pdf
 ---
 created: 2026-09-21T07:15:07Z
 ---
-# Bayesian MARCEL for Junior Cricket - VDCC Under 11 Lineup Optimiser
+ Bayesian MARCEL for Junior Cricket - VDCC Under 11 Lineup Optimiser
 
-Adapt the Bayesian MARCEL baseball projection framework to junior cricket for VDCC Under 11s: hierarchical Beta-Binomial player model on PlayHQ BNJCA data, grade-wide population as unknown-opponent prior, and a match simulator to optimise batting and bowling orders.
+Adapt the Bayesian MARCEL baseball projection framework to junior cricket for VDCC Under 11s (BNJCA): hierarchical Beta-Binomial player model on PlayHQ data, grade population as unknown-opponent prior, and a match simulator under the now-encoded BNJCA U11 playing conditions (25 overs, 9 players, all-out at 8, retire 25-35 balls, mandatory all-player bowling).
 
 ## Summary
-Adapt the Bayesian MARCEL baseball projection framework (PyMC Labs) and hierarchical partial pooling to junior cricket: fit a hierarchical Beta-Binomial model on PlayHQ BNJCA data for the VDCC team moving from Under 10 Whites to Under 11, then use the fitted population distribution as the prior for unknown opponents in a ball-by-ball match simulator that optimises batting order and bowling allocation.
+Adapt the Bayesian MARCEL baseball projection framework to junior cricket for VDCC's team moving from Under 10 Whites to Under 11 (BNJCA): hierarchical Beta-Binomial player model on PlayHQ data, grade-wide population as unknown-opponent prior, and a ball-by-ball match simulator under the encoded BNJCA U11 playing conditions to optimise batting order and bowling allocation.
 
 ---
 
-## 1. Why these baseball models transfer
+## 1. Why the baseball models transfer
 
 ### Source models
-- **Hierarchical partial pooling** (Efron & Morris batting averages, PyMC example): players' true rates drawn from one league-level Beta distribution; players with small samples shrink toward the league mean.
-- **Bayesian MARCEL** (PyMC Labs blog): adds (a) Dirichlet-learned recency weights over 3 periods, (b) an aging effect on the logit scale, (c) full posterior uncertainty per player.
+- **Hierarchical partial pooling** (Efron & Morris batting averages, PyMC example): players' true rates drawn from one league-level Beta distribution; small-sample players shrink toward the league mean.
+- **Bayesian MARCEL** (PyMC Labs blog): adds Dirichlet-learned recency weights over 3 periods, an aging effect on the logit scale, and full posterior uncertainty per player.
 
 ### Concept mapping (baseball -> junior cricket)
 - At-bat (Bernoulli trial) -> ball faced
 - Batting average (hits/AB) -> dismissal hazard (outs / balls faced), Beta-Binomial, transfers unchanged
 - Hard-hit rate -> boundary rate (4s+6s / balls faced), Beta-Binomial, transfers unchanged
 - Pitcher hard-hit-against -> bowler wicket rate (wickets / balls bowled), Beta-Binomial
-- 3 MLB seasons -> 3 history periods: prior U10 season(s), this season pre-Xmas, post-Xmas
-- Aging curve (peak age ~28) -> replaced by a monotone relative-age effect within the age group (an older-by-months U11 is stronger on average; no decline phase)
-- League average -> BNJCA grade-wide distribution, and it does DOUBLE DUTY: shrinkage target for our players AND the prior for unknown opponents (solves the "don't know opposition strength" problem with one model)
+- 3 MLB seasons -> 3 history periods: U10 season(s), this season pre-Xmas, post-Xmas
+- Aging curve (peak age ~28) -> replaced by monotone relative-age-within-age-group effect (no decline phase for juniors)
+- League average -> BNJCA grade-wide distribution; does DOUBLE DUTY: shrinkage target for our players AND the prior for unknown opponents
 
-### What must be adapted (cricket-specific)
-1. Runs off the bat are categorical {0,1,2,3,4,6}, not Bernoulli: model boundary rate (Beta-Binomial) + non-boundary scoring rate (shrunken average) separately - keeps the model MARCEL-simple.
-2. Junior format rules change dismissal semantics: Stage 1 pairs cricket makes a dismissal a -3 penalty (batter continues); BNJCA U11 rules (Section 17, rules booklet PDF) must be encoded as simulator config, not assumed.
-3. The optimizer has no baseball analog: batting order determines who faces the most deliveries, and junior rules force bowling participation limits. Match simulation + order search is additional cricket-specific work.
-4. Data reality: BNJCA makes U10/U11 e-scoring optional, so PlayHQ holds only some games. Pipeline must ingest API data + manual scorebook CSVs; the Bayesian prior handles the gaps.
-5. Recency weighting maps perfectly to fast-developing juniors; the Dirichlet weights should recover "recent form dominates" for free.
+### Adaptations required
+1. Runs off the bat are categorical {0,1,2,3,4,6}: model boundary rate (Beta-Binomial) + non-boundary strike rate (shrunken average) separately.
+2. Simulator must encode actual BNJCA rules (now extracted - see Section 2).
+3. Data parsing must handle the U10 vs U11 sundries convention difference (U10: sundries added to striker's score; U11: sundries separate).
 
 ---
 
-## 2. Model specification (adapted MARCEL for juniors)
+## 2. Encoded BNJCA Under 11 Boys' playing conditions (2026 rules booklet, Section 17)
+
+Extracted from https://bnjca.org.au/wp-content/uploads/2026/07/2026-RULES-BOOKLET-FINAL.pdf pages 32-35:
+
+### Match structure
+- One day, one innings each, maximum **25 overs per team** (Saturday afternoons, 1:30pm)
+- **Non-competitive** developmental format (PlayHQ "points" are notional)
+
+### Team size and dismissals
+- Game-day team = **9 players** (max 11 registered, min 7); 9 fielders on field
+- **All out at 8 dismissals** (with 9 players, one batter can remain not out)
+- **Dismissed batter leaves and cannot return** (real survival process, unlike U10)
+
+### Batting rules
+- May retire Not out after facing minimum **25 balls** (coach/optional)
+- **Must retire at 35 balls** (mandatory cap)
+- Retired batters resume in order of retirement after all others dismissed/retired
+- No balls and Wides count in the batter's ball count
+- **Sundries NOT added to striker's score** (differs from U10)
+- 16 m pitch, batters bat from one end, rotate at end of each over
+- LBW does not apply
+
+### Bowling rules (the participation constraint that shapes the optimizer)
+- Bowlers bowl from one end for the whole innings
+- Over = **6 fair balls or max 8 deliveries** (whichever first; extras re-bowled up to the 8-delivery cap)
+- **ALL players must bowl, including both wicketkeepers**, with 25 overs divided:
+  - Team of 9: 2 non-WK bowl 4 overs; 5 non-WK bowl 3 overs; 2 WK bowl 1 over each
+  - Team of 8: 3 non-WK bowl 4; 3 non-WK bowl 3; 2 WK bowl 2
+  - Team of 7: 3 non-WK bowl 5; 2 non-WK bowl 4; 2 WK bowl 1
+- Players bowl roughly one over each in sequence (round-robin rotation)
+- All sundries count against the bowler
+
+### U10 (prior season) differences - for historical data parsing
+- 20 overs, 7-player teams; dismissed batter CONTINUES batting their allotted balls; dismissal = 4-run penalty to batting team; sundries ARE added to striker's score; all bowl (7 players: 3x4, 2x3, 2x1 overs)
+
+### Model implications
+1. **U11 is a survival format** (dismissal ends a batter's innings, depletes the 8-wicket resource) but with ball caps: 25 overs = 150 balls across 9 batters means average ~17 balls per batter if all 150 used - the 35-ball cap binds only for top-order batters.
+2. **The optimizer's bowling decision space is constrained**: within the mandatory allocation (2x4, 5x3, 2x1 for 9 players), choose WHO gets which tier and the rotation SEQUENCE. Participation is a hard rule, not an option.
+3. **The optimizer's batting decision space**: batting order 1-9 (who faces the most balls) + optional-retirement policy (retire a batter at 25+ balls to protect others' participation, or let them bat to 35).
+4. **Skills transfer U10 -> U11** (per-ball rates), while the format change is handled entirely in the simulator re-parameterization. The 3-period MARCEL weighting bridges the format transition.
+
+---
+
+## 3. Model specification (adapted MARCEL for juniors)
 
 ### Core hierarchical structure (per player i, per period t)
 Batting:
@@ -50,56 +91,61 @@ Batting:
 
 Bowling:
 - Wicket rate: `p_wicket[i,t] ~ Beta(mu_w, sigma_w)`, observed `wickets[i,t] ~ Binomial(balls_bowled[i,t], p_wicket[i,t])`
-- Economy: partially-pooled runs conceded per ball (Gamma likelihood)
+- Economy: partially-pooled runs conceded per fair ball (Gamma likelihood); extras rate modelled separately (8-delivery cap interaction)
 
 ### MARCEL components
 - Recency weights: `{w_1, w_2, w_3} ~ Dirichlet([3,4,5])` over the 3 history periods; projected rate = weighted sum of latent rates
-- Relative-age effect: `age_effect_i = beta_age * ((months_old_i - mean_months) / 12)` on the logit scale, monotone (no peak age - juniors only improve)
-- Opposition: opponent batters/bowlers drawn from the fitted population distributions (mu, sigma) - the unknown-opponent prior
+- Relative-age effect: `age_effect_i = beta_age * ((months_old_i - mean_months) / 12)` on the logit scale, monotone
+- Opposition: opponent batters/bowlers drawn from the fitted population distributions (mu, sigma)
 
 ### Simulator and optimizer
-- Ball-by-ball simulation of a full match under encoded BNJCA U11 rules (pairs vs dismissal format, max overs per bowler, participation bowling, retirement rules)
+- Ball-by-ball simulation under the encoded Section 2 rules: 25 overs/6 fair balls (8-delivery cap), 9 batters, all-out at 8, retire at 25-35 balls, WK/bowler allocation tiers, round-robin over sequence, sundries conventions
 - Posterior predictive draws for our players; population draws for opponents
-- Search over batting orders and bowling allocations; objective = expected run differential / win probability across 5,000 simulated matches
-- Backtest: hold out post-Xmas games, predict from pre-Xmas data, check posterior predictive calibration (mirrors the MARCEL blog's projection evaluation)
+- Search space: batting order (1-9), retirement policy, bowler tier assignment (who gets 4/3/1 overs), rotation sequence
+- Objective: expected run differential / win probability across 5,000 simulated matches
+- Backtest: hold out post-Xmas games, predict from pre-Xmas data, check posterior predictive calibration
 
 ---
 
-## 3. Data acquisition strategy
+## 4. Data acquisition strategy
 
 ### Sources
 1. PlayHQ public GraphQL API (verified working, no API key): `https://api.playhq.com/graphql` with `tenant: ca` header and web origin headers - queries: `discoverGame`, `discoverGrade`, `discoverSeason`, `discoverTeams`, `teamFixture`, `gradeLadder`, `gradePlayerStatistics`
-2. PlayHQ official REST API (if a key is later obtained via Cricket Australia): `GET /v1/organisations/{id}/seasons`, `/v1/seasons/{id}/grades`, `/v2/grades/{id}/games`, `/v2/games/{id}/summary`
+2. PlayHQ official REST API (if a key is later obtained): `GET /v1/organisations/{id}/seasons`, `/v1/seasons/{id}/grades`, `/v2/grades/{id}/games`, `/v2/games/{id}/summary`
 3. Manual scorebook ingestion: CSV template for paper-scored games (BNJCA U10/U11 e-scoring is optional)
 
 ### Known identifiers
 - Club: Valley District Cricket Club (VDCC), Ashgrove, Brisbane; CA club entity `c8fd4cfc-87d8-eb11-a7ad-2818780da0cc`
-- Competition: Brisbane North Junior Cricket Association (BNJCA); verified live season/grade/team access on PlayHQ tenant `ca`
-- Team: Under 10 Whites (2024/25, 2025/26) transitioning to Under 11 for season 2026/27 (Round 1: Sat 10 Oct 2026)
-- Rules source: BNJCA rules booklet PDF (bnjca.org.au) - Section 17 for U11 playing conditions
+- Competition: BNJCA; verified live season/grade/team access on PlayHQ tenant `ca`
+- Team: Under 10 Whites (2024/25, 2025/26) -> Under 11 for 2026/27 (Round 1: Sat 10 Oct 2026)
+- Rules: BNJCA 2026 rules booklet Section 17 (encoded above in Section 2)
 
 ---
 
-## 4. Implementation steps
+## 5. Implementation steps
 
 1. **Repo setup**: clone `https://github.com/lmillard79/JuniorCricket_BayesianSearch.git` into `D:\Code\CricketScores_BayesianModel`; create venv; `requirements.txt` with `pymc`, `arviz`, `pandas`, `requests`, `matplotlib`, `scipy`; WRM-standard layout (`src/junior_cricket/`, `scripts/`, `data/raw|processed|outputs`, `notebooks/`).
-2. **Data pipeline**: `src/junior_cricket/playhq_client.py` (GraphQL + optional REST), `src/junior_cricket/data_loader.py` (collation + manual CSV merge), interim flat CSV outputs for auditability (`vdcc_player_stats.csv`, `grade_baseline_stats.csv`).
-3. **PyMC model**: `src/junior_cricket/model.py` implementing the adapted MARCEL spec above; `notebooks/01_model_exploration.ipynb` for fitting and diagnostics (R-hat, divergences, posterior predictive checks).
-4. **Simulator**: `src/junior_cricket/simulator.py` - ball-by-ball engine with encoded U11 rules config.
-5. **Optimizer**: `src/junior_cricket/optimizer.py` - order/allocation search against opponent population draws; outputs recommendations with win-probability CIs.
-6. **Figures**: WRM palette, 300 dpi (batting posteriors, shrinkage demo, win-prob curves).
+2. **Rules config**: encode Section 2 playing conditions as `src/junior_cricket/rules_u11.py` (and U10 config for historical parsing).
+3. **Data pipeline**: `src/junior_cricket/playhq_client.py` (GraphQL + optional REST), `src/junior_cricket/data_loader.py` (collation + manual CSV merge, sundries convention handling), interim flat CSV outputs for auditability.
+4. **PyMC model**: `src/junior_cricket/model.py` implementing the adapted MARCEL spec; `notebooks/01_model_exploration.ipynb` for fitting and diagnostics (R-hat, divergences, posterior predictive checks).
+5. **Simulator**: `src/junior_cricket/simulator.py` - ball-by-ball engine under encoded U11 rules.
+6. **Optimizer**: `src/junior_cricket/optimizer.py` - order/allocation search within the mandatory participation constraints; outputs recommendations with win-probability CIs.
+7. **Figures**: WRM palette, 300 dpi (batting posteriors, shrinkage demo, win-prob curves).
 
 ---
 
-## 5. Verification plan
+## 6. Verification plan
 - [ ] Verify PlayHQ GraphQL returns BNJCA/VDCC historical games
-- [ ] Validate CSV manual-scorebook ingestion against a known e-scored game
+- [ ] Validate CSV manual-scorebook ingestion against a known e-scored game (U10 sundries convention)
 - [ ] MCMC convergence: R-hat < 1.05, no divergences
-- [ ] Shrinkage sanity check: small-sample players pulled toward grade mean (replicate the partial-pooling example's classic figure with our data)
-- [ ] Simulator rule checks: overs per bowler caps, retirement rules enforced
+- [ ] Shrinkage sanity check: small-sample players pulled toward grade mean
+- [ ] Simulator rule checks: 8-wicket all out, 35-ball retirement, 6-fair-ball/8-delivery overs, WK bowling allocation tiers, round-robin sequence
+- [ ] Simulator aggregate checks: typical U11 totals plausible vs observed grade scores
 - [ ] Backtest: pre-Xmas-only model predicts post-Xmas performances within posterior predictive bands
 
-## 6. Risks / considerations
+## 7. Risks / considerations
 - U10/U11 PlayHQ data may be sparse (optional e-scoring): priors carry the model; document data coverage honestly
+- Small rosters mean optimizer differences may be within model noise: report uncertainty, not just the argmax order
+- The format is explicitly non-competitive and developmental: the optimizer works WITHIN mandatory participation rules (all players bowl; retirement rules) and should be framed as a fun decision-support tool, not a win-maximiser that overrides participation
 - U11 exact playing format (Stage 1 pairs vs Stage 2) must be read from the BNJCA rules booklet before coding the simulator - do not assume
 - Small rosters mean the optimizer's differences may be within model noise: report uncertainty, not just the argmax order
