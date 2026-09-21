@@ -46,6 +46,24 @@ SPECULATIVE_FIELDS = [
     "matchResult",
 ]
 
+# "result" turned out to be real (type GameResult). These are
+# guessed sub-fields on it, tested the same way: one at a time,
+# since GraphQL fails the whole query on any single bad name.
+GAME_RESULT_FIELDS = [
+    "status",
+    "winner",
+    "winningTeam",
+    "margin",
+    "marginType",
+    "homeScore",
+    "awayScore",
+    "homeTeamScore",
+    "awayTeamScore",
+    "resultType",
+    "note",
+    "summary",
+]
+
 
 def _post(client: PlayHQClient, query: str, variables: dict) -> dict:
     response = client._session.post(
@@ -69,6 +87,30 @@ def discover_game_probe_query(field: str) -> str:
         "query($gameId: ID!) { discoverGame(gameID: $gameId) { id %s } }"
         % field
     )
+
+
+def game_result_field_query(field: str, expand: bool = False) -> str:
+    inner = f"{field} {{ id name }}" if expand else field
+    return (
+        "query($gameId: ID!) { discoverGame(gameID: $gameId) { "
+        "id result { %s } } }" % inner
+    )
+
+
+def stats_no_filter_query() -> str:
+    return """
+query publicGradeStatistics($gradeID: ID!) {
+  gradePlayerStatistics(gradeID: $gradeID) {
+    meta { page totalPages totalRecords }
+    results {
+      ranking
+      profile { id firstName lastName }
+      team { name }
+      statistics { count details { value } }
+    }
+  }
+}
+"""
 
 
 def main() -> None:
@@ -142,15 +184,49 @@ def main() -> None:
         else:
             print(f"  {field}: ACCEPTED -> {json.dumps(payload['data'])[:300]}")
 
+    print("=" * 70)
+    print("4. GameResult subfields (result turned out to be real)")
+    print("=" * 70)
+    for field in GAME_RESULT_FIELDS:
+        payload = _post(
+            client,
+            game_result_field_query(field),
+            {"gameId": args.game_id},
+        )
+        if "errors" not in payload:
+            print(f"  {field}: ACCEPTED (scalar) -> "
+                  f"{json.dumps(payload['data'])[:300]}")
+            continue
+        msg = payload["errors"][0].get("message", "")
+        if "must have a selection of subfields" in msg:
+            # Object type - retry with a guessed { id name } shape,
+            # matching the pattern already seen on away/home.
+            retry = _post(
+                client,
+                game_result_field_query(field, expand=True),
+                {"gameId": args.game_id},
+            )
+            if "errors" not in retry:
+                print(f"  {field}: ACCEPTED (object) -> "
+                      f"{json.dumps(retry['data'])[:300]}")
+            else:
+                retry_msg = retry["errors"][0].get("message", "")
+                print(f"  {field}: OBJECT TYPE, {{id name}} guess failed - "
+                      f"{retry_msg[:120]}")
+        else:
+            print(f"  {field}: REJECTED - {msg[:120]}")
+
     if grade_id:
         print("=" * 70)
-        print(f"4. grade_player_statistics for grade {grade_id}")
+        print(f"5. grade_player_statistics for grade {grade_id}, no filter")
         print("=" * 70)
-        try:
-            stats = client.grade_player_statistics(grade_id)
-            print(json.dumps(stats, indent=2)[:3000])
-        except Exception as exc:  # noqa: BLE001 - diagnostic script
-            print("FAILED:", exc)
+        payload = _post(
+            client, stats_no_filter_query(), {"gradeID": grade_id}
+        )
+        if "errors" in payload:
+            print("FAILED:", payload["errors"][0].get("message"))
+        else:
+            print(json.dumps(payload["data"], indent=2)[:3000])
 
 
 if __name__ == "__main__":
