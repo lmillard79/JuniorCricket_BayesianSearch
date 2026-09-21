@@ -4,3 +4,9 @@ pandas
 requests
 matplotlib
 scipy
+# JAX NUTS backend: fit_model.py --sampler numpyro (no C compiler needed)
+numpyro
+jax
+# Posterior .nc read/write (ArviZ 1.x no longer bundles a netCDF backend)
+h5netcdf
+h5py

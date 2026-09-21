@@ -217,7 +217,7 @@ class LineupOptimizer:
             opp_allocation = {
                 p.name: tier for p, tier in zip(by_strength, tier_list)
             }
-            opp_rotation = list(opponents)
+            opp_rotation = [p.name for p in opponents]
             rng.shuffle(opp_rotation)
             result = simulate_innings(
                 batting_skills=[self.skills[n] for n in order],
