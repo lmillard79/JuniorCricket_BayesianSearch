@@ -1,0 +1,6 @@
+pymc
+arviz
+pandas
+requests
+matplotlib
+scipy

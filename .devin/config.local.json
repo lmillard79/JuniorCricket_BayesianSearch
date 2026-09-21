@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Exec(curl)",
+      "Exec(git ls-remote)",
+      "Exec(rm)"
+    ]
+  }
+}
