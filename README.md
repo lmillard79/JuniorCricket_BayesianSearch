@@ -213,15 +213,26 @@ builds from the cache only, and `--max-games N` limits a run. It writes
 and `playhq_all_*.csv` (both, so the model learns the whole grade). Then:
 
 ```bash
+python scripts/fit_ball_model.py
 python scripts/fit_model.py --batting data/processed/playhq_all_batting.csv --bowling data/processed/playhq_all_bowling.csv --sampler numpyro
 python scripts/backtest.py --batting data/processed/playhq_batting.csv --bowling data/processed/playhq_bowling.csv
-python scripts/check_u10_totals.py --team-id 75cdae66 --team-id fafdb4c4
-python scripts/optimise_lineup.py --posterior data/outputs/posterior_model.nc --squad P01,P03,P04,P05,P06,P07,P08,P09,P10
+python scripts/check_u10_totals.py --team-id 75cdae66 --team-id fafdb4c4 --ball-posterior data/outputs/ball_posterior.nc --opposition real
+python scripts/optimise_lineup.py --posterior data/outputs/posterior_model.nc --ball-posterior data/outputs/ball_posterior.nc --squad P01,P03,P04,P05,P06,P07,P08,P09,P10
+python scripts/player_report.py --squad P01,P03,P04,P05,P06,P07,P08,P09,P10 --named
 ```
 
-`fit_model.py` uses the v2 model by default (`--model v1` is the original
-specification, which does not sample real data). `--squad` names the players to
-optimise when the posterior also holds opposition players.
+`fit_ball_model.py` fits the **joint batter-by-bowler ball model**, which is the
+recommended basis for player and lineup statements: each ball's outcome depends
+on batter and bowler together, so a bowler's economy is not judged against the
+weak batters he happened to face. `--ball-posterior` makes it decide every ball
+in the optimiser and the totals check. `fit_model.py` fits the older per-player
+model (v2 by default; `--model v1` is the original specification, which does not
+sample real data); it still seeds the optimiser's search. `--squad` names the
+players to optimise when the posterior also holds opposition players.
+
+Reports use aliases. `player_report.py --named` and
+`python scripts/name_report.py <report>` write a private copy with real names
+under `data/outputs/` (gitignored); never commit or share it.
 
 ### Manual data entry (primary data path)
 
@@ -251,5 +262,11 @@ historical source. Templates live in `data/templates/`:
 - The GitHub repo is public and PlayHQ data holds children's names. Keep raw
   pulls and the alias maps out of git (`data/raw/` is gitignored), and stage
   files explicitly.
-- The simulator's absolute totals run 14 to 20% low against real U10 games
-  (the winning margin is right). See PROJECT_STATUS.md for the diagnosis.
+- With the per-player rates the simulator's absolute totals run 14 to 20% low
+  against real U10 games. The joint ball model fixes the opposition side (totals
+  0.98 to 1.04 of real) but still understates our own strength by about 10%,
+  probably a missing team fielding effect. See PROJECT_STATUS.md.
+- The models learn from U10 games; U11 has a 45 m boundary (U10: 30 to 35 m), so
+  U10 boundary rates will not carry over at face value.
+- The optimiser does not know who keeps wicket; the two players given one over
+  are the keepers by rule.
