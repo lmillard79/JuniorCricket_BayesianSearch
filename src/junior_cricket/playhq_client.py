@@ -1,27 +1,43 @@
 """PlayHQ public GraphQL API client.
 
-Uses the same GraphQL endpoint as the PlayHQ public website
-(``https://api.playhq.com/graphql``) with the ``tenant`` request
-header set to the Cricket Australia tenant code ``ca``. No API
-key is required for the discover-style queries used here.
+Uses the same two GraphQL services as the PlayHQ public website; no
+API key is involved. They take different tenant headers:
+
+* ``https://api.playhq.com/graphql`` (fixtures, results, teams) wants
+  ``tenant: cricket-australia``. With the shorter ``ca`` the fixture
+  query still answers but the per-innings scores come back empty.
+* ``https://spectator.playhq.com/graphql`` (per-game scorecards and
+  ball-by-ball events) wants ``x-phq-tenant: ca``.
 
 The query documents below were copied from PlayHQ's own web
 bundle (``assets/index.*.js``) so they match the live schema
 exactly; GraphQL rejects guessed field names and the schema has
 introspection disabled, so verbatim fragments matter.
+
+These are the website's own undocumented endpoints. PlayHQ's
+documented route (https://docs.playhq.com/tech/) needs an API key
+issued by PlayHQ. The public endpoints sit behind a rate limit: a
+burst of requests gets a CloudFront 403. This client therefore spaces
+requests out, and stops for good on the first 403 or 429 rather than
+retrying (see ``PlayHQBlockedError``).
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 import requests
 
 GRAPHQL_ENDPOINT = "https://api.playhq.com/graphql"
-DEFAULT_TENANT = "ca"
+SPECTATOR_ENDPOINT = "https://spectator.playhq.com/graphql"
+DEFAULT_TENANT = "cricket-australia"
+SPECTATOR_TENANT = "ca"
 WEB_ORIGIN = "https://www.playhq.com"
 REQUEST_TIMEOUT_SECONDS = 30
+MIN_REQUEST_INTERVAL_SECONDS = 2.5
+EVENTS_MAX_PAGES = 12
 
 DISCOVER_GAME_QUERY = """
 query gameCentreDiscoverGame($gameId: ID!) {
@@ -234,6 +250,71 @@ fragment RoundFixtureFragment on DiscoverRoundFixture {
     home {
       ...RoundFixtureTeamFragment
     }
+    result {
+      winner {
+        name
+        value
+      }
+      outcome {
+        name
+        value
+      }
+      home {
+        outcome {
+          name
+          value
+        }
+        statistics {
+          count
+          type {
+            value
+          }
+        }
+        periods {
+          period {
+            label
+            value
+          }
+          type
+          closureStatus
+          statistics {
+            count
+            type {
+              label
+              value
+            }
+          }
+        }
+        gameOutcomeDescription
+      }
+      away {
+        outcome {
+          name
+          value
+        }
+        statistics {
+          count
+          type {
+            value
+          }
+        }
+        periods {
+          period {
+            label
+            value
+          }
+          type
+          closureStatus
+          statistics {
+            count
+            type {
+              label
+              value
+            }
+          }
+        }
+      }
+    }
     status {
       name
       value
@@ -335,17 +416,101 @@ query publicGradeStatistics($gradeID: ID!, $filter: GradePlayerStatisticsFilter)
 """
 
 
+# Per-game scorecard (spectator service). Field selection copied from the
+# site's gameViewSpectator / GameViewFragment document, trimmed to the
+# line-up and per-player statistics the scorecard parser reads.
+_PLAYERS = """{
+        players {
+          id
+          profileID
+          name
+          lineupOrder
+          periodStatistics {
+            period { value }
+            side
+            type
+            statistics { type { value } count }
+            status
+            displayOrder
+          }
+        }
+      }"""
+
+GAME_VIEW_SPECTATOR_QUERY = f"""
+query gameViewSpectator($id: ID!) {{
+  game(id: $id) {{
+    id
+    status
+    statistics {{
+      home {_PLAYERS}
+      away {_PLAYERS}
+    }}
+  }}
+}}
+"""
+
+# Ball-by-ball events (spectator service), copied from the site's
+# gameEventsSpectator document. ``after`` is a raw millisecond
+# timestamp and ``order`` is EARLIEST_FIRST or LATEST_FIRST.
+GAME_EVENTS_SPECTATOR_QUERY = """
+query gameEventsSpectator($gameID: ID!, $after: Int, $filters: EventFilter, $order: EventOrder) {
+  gameEvents(gameID: $gameID, after: $after, filters: $filters, order: $order) {
+    id
+    title
+    description
+    visible
+    requireReload
+    sportEventStamp
+    eventSection
+    timestamp
+    previousEventID
+    side
+    period
+    ... on ScoreEvent {
+      progressiveScore
+      score
+    }
+    ... on FoulEvent {
+      type
+    }
+    ... on DismissalEvent {
+      icon
+    }
+    ... on ExtraEvent {
+      icon
+    }
+    ... on PositionEvent {
+      changeDescription
+    }
+  }
+}
+"""
+
+
 class PlayHQAPIError(RuntimeError):
     """Raised when the PlayHQ GraphQL endpoint returns an error."""
 
 
+class PlayHQBlockedError(PlayHQAPIError):
+    """Raised on HTTP 403 or 429: PlayHQ is refusing our requests.
+
+    The client never retries after this. Once raised, every further
+    request on the same client raises immediately without touching
+    the network, so a caller looping over many games cannot keep
+    hitting a service that has told it to stop.
+    """
+
+
 class PlayHQClient:
-    """Minimal client for PlayHQ's public GraphQL discover API.
+    """Minimal client for PlayHQ's public GraphQL API.
 
     Args:
-        tenant: PlayHQ tenant code; ``ca`` is Cricket Australia.
+        tenant: Tenant header for ``api.playhq.com``; the site sends
+            ``cricket-australia``.
         timeout: Per-request timeout in seconds.
         logger: Optional logger; a module logger is used by default.
+        min_interval: Minimum seconds between any two requests.
+        spectator_tenant: ``x-phq-tenant`` for the spectator service.
     """
 
     def __init__(
@@ -353,9 +518,15 @@ class PlayHQClient:
         tenant: str = DEFAULT_TENANT,
         timeout: int = REQUEST_TIMEOUT_SECONDS,
         logger: Optional[logging.Logger] = None,
+        min_interval: float = MIN_REQUEST_INTERVAL_SECONDS,
+        spectator_tenant: str = SPECTATOR_TENANT,
     ) -> None:
         self._timeout = timeout
         self._logger = logger or logging.getLogger(__name__)
+        self._min_interval = min_interval
+        self._spectator_tenant = spectator_tenant
+        self._last_request = None
+        self._blocked = False
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -372,6 +543,63 @@ class PlayHQClient:
             }
         )
 
+    def _throttle(self) -> None:
+        """Sleep so consecutive requests are at least ``min_interval`` apart."""
+        if self._last_request is not None:
+            wait = self._min_interval - (time.monotonic() - self._last_request)
+            if wait > 0:
+                time.sleep(wait)
+        self._last_request = time.monotonic()
+
+    def _post(
+        self,
+        url: str,
+        body: Dict[str, Any],
+        headers: Optional[Dict[str, Optional[str]]] = None,
+    ) -> Dict[str, Any]:
+        """POST one GraphQL request politely and return the JSON response.
+
+        Args:
+            url: GraphQL endpoint.
+            body: Request body (query, variables, optional operation name).
+            headers: Per-request header overrides; a value of None
+                removes that header for this request.
+
+        Returns:
+            The decoded JSON response, including any ``errors`` member.
+
+        Raises:
+            PlayHQBlockedError: On HTTP 403 or 429, or when an earlier
+                request on this client was refused.
+            PlayHQAPIError: On transport failure or any other non-200
+                status.
+        """
+        if self._blocked:
+            raise PlayHQBlockedError(
+                "PlayHQ refused an earlier request; not sending more"
+            )
+        self._throttle()
+        try:
+            response = self._session.post(
+                url, json=body, headers=headers, timeout=self._timeout
+            )
+        except requests.RequestException as exc:
+            raise PlayHQAPIError(f"PlayHQ request failed: {exc}") from exc
+
+        if response.status_code in (403, 429):
+            self._blocked = True
+            raise PlayHQBlockedError(
+                f"PlayHQ returned HTTP {response.status_code} (request "
+                "blocked or rate limited); stopping. Wait before trying "
+                "again, or use PlayHQ's official API with a key."
+            )
+        if response.status_code != 200:
+            raise PlayHQAPIError(
+                f"PlayHQ returned HTTP {response.status_code}: "
+                f"{response.text[:200]}"
+            )
+        return response.json()
+
     def _execute(self, query: str, variables: Dict[str, Any]) -> Any:
         """Run one GraphQL request and return the ``data`` payload.
 
@@ -386,22 +614,9 @@ class PlayHQClient:
             PlayHQAPIError: On transport failure, non-200 status or
                 GraphQL-level errors.
         """
-        try:
-            response = self._session.post(
-                GRAPHQL_ENDPOINT,
-                json={"query": query, "variables": variables},
-                timeout=self._timeout,
-            )
-        except requests.RequestException as exc:
-            raise PlayHQAPIError(f"PlayHQ request failed: {exc}") from exc
-
-        if response.status_code != 200:
-            raise PlayHQAPIError(
-                f"PlayHQ returned HTTP {response.status_code}: "
-                f"{response.text[:200]}"
-            )
-
-        payload = response.json()
+        payload = self._post(
+            GRAPHQL_ENDPOINT, {"query": query, "variables": variables}
+        )
         if "errors" in payload:
             messages = [
                 str(error.get("message", error)) for error in payload["errors"]
@@ -409,6 +624,37 @@ class PlayHQClient:
             raise PlayHQAPIError("; ".join(messages))
 
         return payload.get("data")
+
+    def _execute_spectator(
+        self, operation: str, query: str, variables: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Run one spectator-service request and return the full response.
+
+        Args:
+            operation: GraphQL operation name.
+            query: GraphQL document text.
+            variables: Variables for the document.
+
+        Returns:
+            The full decoded response (with its ``data`` member), so a
+            caller can cache it verbatim.
+
+        Raises:
+            PlayHQAPIError: On transport failure, non-200 status or
+                GraphQL-level errors.
+        """
+        payload = self._post(
+            SPECTATOR_ENDPOINT,
+            {"operationName": operation, "query": query,
+             "variables": variables},
+            headers={"tenant": None, "x-phq-tenant": self._spectator_tenant},
+        )
+        if payload.get("errors"):
+            messages = [
+                str(error.get("message", error)) for error in payload["errors"]
+            ]
+            raise PlayHQAPIError("; ".join(messages))
+        return payload
 
     def discover_game(self, game_id: str) -> Optional[Dict[str, Any]]:
         """Fetch game, teams, round, grade, season and organisation.
@@ -508,3 +754,61 @@ class PlayHQClient:
             {"gradeID": grade_id, "filter": filter_value},
         )
         return data.get("gradePlayerStatistics", {}) if data else {}
+
+    def game_scorecard(self, game_id: str) -> Dict[str, Any]:
+        """Fetch one game's per-player scorecard.
+
+        Args:
+            game_id: PlayHQ game ID.
+
+        Returns:
+            The full JSON response, ready to cache verbatim and to
+            pass to ``playhq_parse.parse_scorecard``.
+        """
+        return self._execute_spectator(
+            "gameViewSpectator", GAME_VIEW_SPECTATOR_QUERY, {"id": game_id}
+        )
+
+    def game_events(
+        self,
+        game_id: str,
+        side: str,
+        period: str = "FIRST_INNINGS",
+        max_pages: int = EVENTS_MAX_PAGES,
+    ) -> List[Dict[str, Any]]:
+        """Fetch every ball-by-ball event for one innings.
+
+        The service returns the latest 50 events first; older pages
+        are requested with ``after`` set to the oldest timestamp seen
+        (plus one millisecond, so events sharing that timestamp are
+        not skipped) and duplicates are dropped by event ID.
+
+        Args:
+            game_id: PlayHQ game ID.
+            side: Batting side, ``HOME`` or ``AWAY``.
+            period: Innings period; each U10/U11 side bats once, in
+                ``FIRST_INNINGS``.
+            max_pages: Safety cap on pages fetched.
+
+        Returns:
+            Events in time order.
+        """
+        filters = {"period": period, "side": side}
+        seen: Dict[str, Dict[str, Any]] = {}
+        variables: Dict[str, Any] = {"gameID": game_id, "filters": filters}
+        for _ in range(max_pages):
+            payload = self._execute_spectator(
+                "gameEventsSpectator", GAME_EVENTS_SPECTATOR_QUERY, variables
+            )
+            page = (payload.get("data") or {}).get("gameEvents") or []
+            fresh = [e for e in page if e["id"] not in seen]
+            if not fresh:
+                break
+            for event in fresh:
+                seen[event["id"]] = event
+            oldest = min(int(e["timestamp"]) for e in seen.values())
+            variables = {
+                "gameID": game_id, "filters": filters,
+                "after": oldest + 1, "order": "LATEST_FIRST",
+            }
+        return sorted(seen.values(), key=lambda e: int(e["timestamp"]))
