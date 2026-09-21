@@ -9,7 +9,7 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
 ## 1. Current status
 
 * Runs end to end on the personal PC (Windows 11, Python 3.14.7, PyMC
-  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 142 passed. No C
+  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 143 passed. No C
   compiler needed: sampling uses numpyro/JAX.
 * **Game replays** (`scripts/replay_games.py`): each real U10 game is rebuilt and
   replayed thousands of times; recorded totals are placed against the replay

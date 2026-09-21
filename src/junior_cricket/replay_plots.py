@@ -20,6 +20,7 @@ import numpy as np                       # noqa: E402
 from junior_cricket.replay import (      # noqa: E402
     DecisionStudy,
     RealGame,
+    ordinal as _ordinal,
     over_summary,
     percentile_rank,
     totals,
@@ -65,13 +66,6 @@ def _title(game: RealGame) -> str:
     won = game.our_total - game.their_total
     result = f"won by {won}" if won > 0 else (f"lost by {-won}" if won < 0 else "tied")
     return f"{when} v {game.opponent}: {result} ({game.our_total} to {game.their_total})"
-
-
-def _ordinal(share: float) -> str:
-    n = int(round(share * 100))
-    n = min(max(n, 0), 100)
-    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
 
 
 def _histogram(ax, values: np.ndarray, actual: float, label: str, good_high: bool,

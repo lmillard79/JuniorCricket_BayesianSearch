@@ -384,6 +384,13 @@ def percentile_rank(values: np.ndarray, actual: float) -> float:
     return float((np.sum(values < actual) + 0.5 * np.sum(values == actual)) / len(values))
 
 
+def ordinal(share: float) -> str:
+    """A share from 0 to 1 as a percentile with its suffix: 0.92 gives ``92nd``."""
+    n = min(max(int(round(share * 100)), 0), 100)
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
 def net_batting(sims: Dict[str, np.ndarray]) -> np.ndarray:
     """Our batting's part of the margin: runs minus the penalty for our dismissals."""
     return sims["our_runs"].sum(axis=1) - PENALTY * sims["our_wkts"].sum(axis=1)

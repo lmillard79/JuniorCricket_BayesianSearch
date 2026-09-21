@@ -30,7 +30,7 @@ effect and the U10-to-U11 transfer.**
 | Player report and private name translation | Done | `scripts/player_report.py`, `scripts/name_report.py` |
 | **Game replays and decision studies** (U10) | Done. Over-by-over charts, percentile of each recorded result, batting-order and bowling-split studies | `replay.py`, `replay_plots.py`, `scripts/replay_games.py` |
 | **U11 batting-order strategies** | Done as a pilot. Paired worlds, named strategies, swap search on fresh worlds, 36-scenario stress grid | `strategies.py`, `scripts/compare_batting_strategies.py` |
-| Tests | 142 passing | `tests/` |
+| Tests | 143 passing | `tests/` |
 
 ## Real data
 
@@ -179,7 +179,10 @@ six) -0.8 ± 0.4, strong-weak alternating -7.4 ± 0.4, weakest to strongest
 -18.7 ± 0.5, random orders -9.1 on average. The swap search found nothing better
 than strongest to weakest, and in none of 35 other scenarios (retirement 25, 30 or
 35; boundary shift 0, -0.7, -1.4; skill drift 0 or 0.3; random or smart attack) did
-any alternative beat it by more than 0.2 runs. The mechanism is who gets the balls:
+any alternative beat it by more than 0.2 runs. Split by opposition attack strength
+(thirds of the worlds), strong-weak alternating loses -7.3 ± 0.6 against the strongest
+attacks and -8.0 ± 0.7 against the weakest, so pairing does not shield the best batters
+from the best bowling. The mechanism is who gets the balls:
 the six best batters face 17 to 20 balls each under the conventional order.
 Retiring everyone at 25 instead of 35 costs about 5 runs at the current ground
 size; a per-batter policy is not yet modelled.

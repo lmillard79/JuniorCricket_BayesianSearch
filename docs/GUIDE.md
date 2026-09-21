@@ -280,6 +280,11 @@ Open `strategy_report.html`. The main table has one row per batting strategy:
 - **Share of worlds better**: in what share of the simulated worlds the strategy scored
   more than the conventional order. Around 50% means indistinguishable.
 
+A second table splits the same comparison by how strong the opposition attack was (the
+strongest, middle and weakest thirds of the simulated worlds; `strategy_by_attack_strength.csv`).
+If a pairing protected the best batters from strong bowling it would show as a smaller
+loss in the first column. It does not.
+
 The charts: `worms.png` (median runs accumulated and per over by strategy),
 `balls_by_rank.png` (who gets the balls and what they do with them, which is the
 *reason* orders differ), and `sensitivity.png` (the difference from the conventional

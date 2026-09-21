@@ -124,7 +124,7 @@ def analyse(args, logger) -> "tuple[list, list[str]]":
                 "%s v %s: recorded margin %+d, replay median %+.0f (%s percentile); "
                 "best order %+.1f, best bowling split %+.1f runs",
                 g.date, g.opponent, g.our_total - g.their_total, np.median(t["margin"]),
-                f"{R.percentile_rank(t['margin'], g.our_total - g.their_total) * 100:.0f}th",
+                R.ordinal(R.percentile_rank(t["margin"], g.our_total - g.their_total)),
                 batting.gain(best_bat)[0], fixed.gain(best_bowl)[0])
     return replays, notes
 
@@ -219,13 +219,13 @@ def write_report(replays, out_dir: Path, summary: Dict[str, float], args) -> Pat
     show["date"] = [_date.fromisoformat(d).strftime("%d %b %Y") for d in show["date"]]
     view = pd.DataFrame({
         "Date": show["date"], "Opponent": show["opponent"],
-        "Our total": [f"{a} (median {m:.0f}, {p * 100:.0f}th)" for a, m, p in zip(
+        "Our total": [f"{a} (median {m:.0f}, {R.ordinal(p)})" for a, m, p in zip(
             show["our_recorded"], show["our_total_median"], show["our_total_pct"])],
-        "Their total": [f"{a} (median {m:.0f}, {p * 100:.0f}th)" for a, m, p in zip(
+        "Their total": [f"{a} (median {m:.0f}, {R.ordinal(p)})" for a, m, p in zip(
             show["their_recorded"], show["their_total_median"], show["their_total_pct"])],
-        "Margin": [f"{a:+d} (median {m:+.0f}, {p * 100:.0f}th)" for a, m, p in zip(
+        "Margin": [f"{a:+d} (median {m:+.0f}, {R.ordinal(p)})" for a, m, p in zip(
             show["margin_recorded"], show["margin_median"], show["margin_pct"])],
-        "Model win chance": [f"{w * 100:.0f}%" for w in show["win_chance_replay"]],
+        "Win chance in the replays": [f"{w * 100:.0f}%" for w in show["win_chance_replay"]],
     })
     rows = []
     for gr in replays:
@@ -271,10 +271,10 @@ already seen these games.</p>
 <h2>The short answer</h2>
 <ul>
 <li><b>Above or below the median?</b> Our recorded total was above the model's median replay in
-{s['our_total_above']} of {s['n']} games (average percentile {s['our_total_mean_pct'] * 100:.0f}th); the
+{s['our_total_above']} of {s['n']} games (average percentile {R.ordinal(s['our_total_mean_pct'])}); the
 opposition's was above its median in {s['their_total_above']} of {s['n']} (average
-{s['their_total_mean_pct'] * 100:.0f}th); the margin was above the median in
-{s['margin_above']} of {s['n']} (average {s['margin_mean_pct'] * 100:.0f}th). A fair model averages
+{R.ordinal(s['their_total_mean_pct'])}); the margin was above the median in
+{s['margin_above']} of {s['n']} (average {R.ordinal(s['margin_mean_pct'])}). A fair model averages
 about 50th, {calibration}</li>
 <li><b>{luck_lead}</b>A single game's margin has a spread of about
 {s['luck_sd']:.0f} runs (one standard deviation) even with the lineups fixed.</li>
@@ -305,7 +305,11 @@ an innings unfolds (for example batters settling in).</p>
 <img src="data:image/png;base64,{_b64(out_dir / 'decisions.png')}">
 {_table_html(decision_view)}
 <p class="note">Gains are in runs of margin against what was actually done, from fresh replays of the
-alternative that screened best, ± 95% interval. Grey ticks in the chart are random alternatives.</p>
+alternative that screened best, ± 95% interval. Labels: <b>best first</b> puts the strongest batters
+first (or gives the biggest shares to the best bowlers), <b>worst first</b> the reverse,
+<b>alternating</b> and <b>reversed</b> are other rules of thumb, and <b>random N</b> is one of the random
+orders or splits tried. Which label appears is mostly luck once the true gain is this small; read the
+size of the gain against its interval, not the label. Grey ticks in the chart are random alternatives.</p>
 
 <h2>4. Every game, over by over</h2>
 {figures}

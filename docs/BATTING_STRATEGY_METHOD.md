@@ -69,7 +69,9 @@ true skills, same opposition, same tactics, same ground, and the same ball-level
 numbers to start with). A difference between two strategies is then not caused by one of
 them meeting a tougher attack. We report the mean total, its spread, the paired
 difference from strongest to weakest with its standard error, and the share of worlds
-in which the strategy did better. Results can also be split by attack strength.
+in which the strategy did better. Results are also split by attack strength (the worlds
+grouped into the strongest, middle and weakest thirds of opposition attacks), which tests
+directly whether a pairing helps when the bowling is strong.
 
 **Step 5. Search, judged on fresh worlds.** A swap search starts from the conventional
 order, tries every pair swap on a set of worlds, and accepts a swap only if it wins by
@@ -121,10 +123,14 @@ standard error.
    face 17 to 20 balls each and the three weakest 5 to 12. The alternating order pushes 13
    to 15 balls onto the weakest batters at the expense of the fifth-best (7 balls), which is
    where the runs are lost. (`balls_by_rank.png`)
-5. **The "best batters miss the best bowlers" idea does not change the ranking.** Against
-   a smart attack (best bowlers open and bowl most overs) every total falls by about 4
-   runs, but the ranking of strategies is unchanged. With logit-additive batter and bowler
-   effects there is little matchup to exploit even if the attack were known.
+5. **The "best batters miss the best bowlers" idea does not help.** Splitting the worlds
+   into thirds by how strong the opposition attack was, strong-weak alternating loses about
+   the same against the strongest attacks (-7.3 ± 0.6) as against the weakest (-8.0 ± 0.7),
+   and balanced pairs and strong-middle are within about a run of a tie in every third
+   (`strategy_by_attack_strength.csv`). A smart attack (best bowlers open and bowl most
+   overs) lowers every total by about 4 runs but does not change the ranking. Under this
+   model, where batter and bowler effects add on the logit scale, there is little matchup
+   to exploit even if the attack were known.
 6. **The ranking is robust.** Across retirement policy, ground size, drift and opposition
    tactics the order of strategies never changed. Bigger boundaries shrink the penalty for
    a poor order (averaged over the retirement policies, leading with the weakest costs about
@@ -203,5 +209,5 @@ python scripts/compare_batting_strategies.py --search
 ```
 
 Writes `data/outputs/strategies/` (gitignored): `strategy_report.html`, `strategy_results.csv`,
-`strategy_balls_by_rank.csv`, `worms.png`, `balls_by_rank.png`, `sensitivity.png`. Read the
-outputs with [GUIDE.md](GUIDE.md), section 4.8.
+`strategy_balls_by_rank.csv`, `strategy_by_attack_strength.csv`, `worms.png`,
+`balls_by_rank.png`, `sensitivity.png`. Read the outputs with [GUIDE.md](GUIDE.md), section 4.8.

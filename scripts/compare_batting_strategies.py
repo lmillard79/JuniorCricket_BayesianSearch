@@ -22,7 +22,7 @@ Skills come from U10 games, so results are indicative until U11 data arrives.
 
 Outputs (under ``data/outputs/strategies/``, gitignored; aliases only):
     strategy_report.html, strategy_results.csv, strategy_balls_by_rank.csv,
-    worms.png, balls_by_rank.png, sensitivity.png
+    strategy_by_attack_strength.csv, worms.png, balls_by_rank.png, sensitivity.png
 
 Example:
     python scripts/compare_batting_strategies.py --search
@@ -74,6 +74,28 @@ def summarise(scenario: S.Scenario, results: Dict[str, Dict[str, np.ndarray]]) -
             "diff_vs_baseline": diff, "se": se, "share_of_worlds_better": better,
         })
     return rows
+
+
+def attack_table(results: Dict[str, Dict[str, np.ndarray]]) -> pd.DataFrame:
+    """Each strategy against strongest to weakest, split by how strong the opposition attack was.
+
+    Worlds are grouped into thirds by the attack's rating (runs an average batter scores per
+    ball off it), so this shows whether a pairing helps when the bowling is strong, weak or
+    in between. Every strategy met the same worlds, so the groups are the same for all.
+    """
+    base = results[BASELINE]
+    groups = S.by_attack(base)
+    rows = []
+    for name, r in results.items():
+        if name == BASELINE:
+            continue
+        diff = S.world_means(r) - S.world_means(base)
+        row = {"Strategy": name}
+        for label, idx in zip(("Strongest third of attacks", "Middle third", "Weakest third"), groups):
+            d = diff[idx]
+            row[label] = f"{d.mean():+.1f} ± {d.std(ddof=1) / np.sqrt(len(d)):.1f}"
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def plot_worms(results, path: Path, names: List[str], manhattan: List[str]) -> None:
@@ -261,6 +283,14 @@ def main() -> None:
     order_of = [k for k in main_named]
     grid_view = grid_view.reindex(order_of)
     spread = np.array(rand_diffs)
+    attack_view = attack_table({k: v for k, v in main_named.items()})
+    attack_view.to_csv(out / "strategy_by_attack_strength.csv", index=False, encoding="utf-8-sig")
+    alternatives = table[(table["strategy"] != BASELINE) & ~table["strategy"].str.startswith("random")]
+    best_alternative = alternatives.groupby("scenario")["diff_vs_baseline"].max()
+    ranges = alternatives.groupby("strategy")["diff_vs_baseline"].agg(["min", "max"])
+    answer = "".join(
+        f"<li><b>{name}</b>: between {lo:+.1f} and {hi:+.1f} runs across the {len(best_alternative)} scenarios.</li>"
+        for name, (lo, hi) in ranges.iterrows())
     if not args.search:
         search_note = "No order search was run (use --search)."
     elif searched == orders[BASELINE]:
@@ -273,11 +303,35 @@ def main() -> None:
 <p>Each strategy was played through {2 * (TEST_WORLDS[1] - TEST_WORLDS[0]):,} innings ({TEST_WORLDS[1] - TEST_WORLDS[0]:,} worlds
 x {args.reps}). A world is a draw of our players' true skills, nine unknown opposition players, their tactics
 and the ground, and every strategy meets the same worlds. Skills are U10 estimates, so this is indicative.</p>
+<h2>The short answer</h2>
+<p>Across {len(best_alternative)} sets of assumptions (retire at 25, 30 or 35 balls; boundary shifts for the bigger
+U11 ground; skill drift; smarter opposition), no alternative beat strongest to weakest by more than
+{max(best_alternative.max(), 0):.1f} runs. Against strongest to weakest, each alternative scored:</p>
+<ul>{answer}</ul>
+<p>Negative means fewer runs than the conventional order. Comparisons are paired: every strategy met the same
+worlds, so a difference is not down to one of them meeting a tougher attack.</p>
+<h3>How to read the tables and charts</h3>
+<ul>
+<li><b>Mean total, SD</b>: the average and spread of our innings total across worlds.</li>
+<li><b>Runs vs strongest-to-weakest</b>: the paired difference (negative is worse) and its standard error.
+About two standard errors or more is a real difference; smaller is a tie.</li>
+<li><b>Share of worlds better</b>: in what share of worlds the strategy out-scored the conventional order;
+around 50% means indistinguishable.</li>
+<li><b>Worm and Manhattan</b>: median runs accumulated (line, with the middle 50% as a band) and median runs per
+over. <b>Balls by rank</b>: who faces the balls and what they do with them, which is why orders differ.
+<b>Sensitivity</b>: the same comparison under every assumption tested (columns: retire at | boundary shift |
+skill drift | random or smart opposition).</li>
+</ul>
 <h2>Main scenario: {MAIN.label()}</h2>
 {view.round(2).to_html(index=False, border=0, classes='t')}
 <p>Twelve random batting orders scored {spread.mean():+.1f} runs on average against strongest to weakest
 (from {spread.min():+.1f} to {spread.max():+.1f}).</p>
 <p>{search_note}</p>
+<h3>Does it depend on how strong the opposition attack is?</h3>
+{attack_view.to_html(index=False, border=0, classes='t')}
+<p>Runs against strongest to weakest (± standard error), for the worlds with the strongest third, middle third
+and weakest third of opposition attacks. If a pairing helped against strong bowling it would show as a
+smaller loss (or a gain) in the first column.</p>
 <img src="data:image/png;base64,{_b64(out / 'worms.png')}">
 <img src="data:image/png;base64,{_b64(out / 'balls_by_rank.png')}">
 <h2>Do the conclusions survive other assumptions?</h2>

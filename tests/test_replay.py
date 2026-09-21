@@ -42,6 +42,13 @@ def test_percentile_rank_counts_ties_as_half() -> None:
     assert R.percentile_rank(values, 0) == 0.0 and R.percentile_rank(values, 9) == 1.0
 
 
+def test_percentiles_read_naturally() -> None:
+    got = {p: R.ordinal(p / 100) for p in (0, 1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 50, 61, 92, 100)}
+    assert got == {0: "0th", 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 11: "11th", 12: "12th",
+                   13: "13th", 21: "21st", 22: "22nd", 23: "23rd", 50: "50th", 61: "61st",
+                   92: "92nd", 100: "100th"}
+
+
 def balls(overs: int = 20, per_over: int = 6) -> pd.DataFrame:
     n = overs * per_over
     return pd.DataFrame({
