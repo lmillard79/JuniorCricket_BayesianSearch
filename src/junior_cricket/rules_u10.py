@@ -1,7 +1,10 @@
-"""BNJCA Under 10 playing conditions (2026 rules booklet).
+"""BNJCA Under 10 playing conditions.
 
 Source: BNJCA 2026 Rules Booklet, Section 16 (pages 29-32),
 https://bnjca.org.au/wp-content/uploads/2026/07/2026-RULES-BOOKLET-FINAL.pdf
+The allocation tables and Rules 16.8 and 16.10 were re-checked against the
+September 2025 edition (the rules the 2025/26 games were played under),
+https://bnjca.org.au/wp-content/uploads/2023/12/BNJCA-RULE-BOOK.pdf
 
 Key semantics: single-day game over 40 overs in two innings of
 20 overs each, 7-player teams, dismissed batters continue batting

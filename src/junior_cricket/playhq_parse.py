@@ -54,12 +54,14 @@ class BowlingLine:
         runs: Runs conceded, sundries included.
         wickets: Wickets credited to the bowler.
         maidens: Maiden overs.
+        order: Position in the bowling order as displayed.
     """
 
     balls: int
     runs: int
     wickets: int
     maidens: int
+    order: int = 0
 
 
 @dataclass(frozen=True)
@@ -235,6 +237,7 @@ def _appearance(player: Dict[str, Any]) -> Appearance:
                 runs=int(round(stats.get("RUNS", 0))),
                 wickets=int(round(stats.get("WICKETS", 0))),
                 maidens=int(round(stats.get("MAIDENS", 0))),
+                order=int(entry.get("displayOrder") or 0),
             )
     return Appearance(
         name=(player.get("name") or "").strip(),

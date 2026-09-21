@@ -14,7 +14,7 @@ import csv
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -39,12 +39,15 @@ class GameInfo:
         date: ISO date of the game.
         our_side: ``HOME`` or ``AWAY``.
         opponent: Opposition team name (a team, not a person).
+        our_team: Our team's name, used as the opponent of the
+            opposition's rows.
     """
 
     game_id: str
     date: str
     our_side: str
     opponent: str
+    our_team: str = ""
 
 
 @dataclass
@@ -52,13 +55,18 @@ class GameRows:
     """Scorebook rows built for one game.
 
     Attributes:
-        batting: Rows matching ``BATTING_COLUMNS``.
-        bowling: Rows matching ``BOWLING_COLUMNS``.
+        batting: Our side's rows matching ``BATTING_COLUMNS``.
+        bowling: Our side's rows matching ``BOWLING_COLUMNS``.
+        opp_batting: The opposition's batting rows (empty unless
+            opposition aliases were supplied).
+        opp_bowling: The opposition's bowling rows.
         warnings: Data-quality notes worth surfacing to the user.
     """
 
     batting: List[Dict[str, object]] = field(default_factory=list)
     bowling: List[Dict[str, object]] = field(default_factory=list)
+    opp_batting: List[Dict[str, object]] = field(default_factory=list)
+    opp_bowling: List[Dict[str, object]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
 
@@ -108,13 +116,13 @@ class PlayerAliases:
         )
 
 
-def load_aliases(path: Path) -> PlayerAliases:
+def load_aliases(path: Path, prefix: str = "P") -> PlayerAliases:
     """Load an alias map written by ``save_aliases`` (empty if absent)."""
     if not path.exists():
-        return PlayerAliases()
+        return PlayerAliases(prefix=prefix)
     with path.open(newline="", encoding="utf-8") as handle:
         rows = [(r["alias"], r["key"], r["name"]) for r in csv.DictReader(handle)]
-    return PlayerAliases(rows)
+    return PlayerAliases(rows, prefix=prefix)
 
 
 def save_aliases(aliases: PlayerAliases, path: Path) -> None:
@@ -126,59 +134,44 @@ def save_aliases(aliases: PlayerAliases, path: Path) -> None:
         writer.writerows(aliases.entries())
 
 
-def build_game_rows(
-    card: Scorecard,
-    info: GameInfo,
-    own_innings: Optional[ParsedInnings],
-    their_innings: Optional[ParsedInnings],
+def _side_rows(
+    lines: Sequence[Appearance],
+    fielding: Sequence[Appearance],
+    events: Optional[ParsedInnings],
+    date: str,
+    opponent: str,
     aliases: PlayerAliases,
-) -> GameRows:
-    """Build scorebook rows for our side of one game.
-
-    Balls, runs, fours and sixes come from the scorecard; dismissals
-    per batter come from the ball-by-ball events (the scorecard has no
-    per-batter dismissal field, and U10 batters carry on after being
-    out). Without events for our innings the batting rows are skipped
-    rather than filled with zero dismissals, which would bias the
-    dismissal rate downwards; bowling rows need no events.
+) -> Tuple[List[Dict[str, object]], List[Dict[str, object]], bool]:
+    """Batting and bowling rows for one side of one game.
 
     Args:
-        card: Parsed scorecard for the game.
-        info: Fixture facts (date, our side, opposition).
-        own_innings: Decoded events of our batting innings, or None.
-        their_innings: Decoded events of the opposition innings, or
-            None; used only for the consistency check.
+        lines: This side's scorecard lines.
+        fielding: The other side's lines (the bowlers this side faced).
+        events: Decoded events of this side's batting innings, or None.
+        date: ISO date of the game.
+        opponent: Label for the opposition column.
         aliases: Alias map, extended in place with any new player.
 
     Returns:
-        The rows and any warnings.
+        (batting rows, bowling rows, whether events were available).
     """
-    ours = card.side(info.our_side)
-    theirs = card.side("AWAY" if info.our_side == "HOME" else "HOME")
-    result = GameRows()
-
-    linked_own = link_innings(own_innings, ours, theirs) if own_innings else None
-    if own_innings is not None:
-        for problem in reconcile(ours, own_innings, theirs):
-            result.warnings.append(f"{info.game_id} own innings: {problem}")
-    if their_innings is not None:
-        for problem in reconcile(theirs, their_innings, ours):
-            result.warnings.append(f"{info.game_id} opposition innings: {problem}")
-
+    linked = link_innings(events, lines, fielding) if events else None
     dismissals: Dict[str, int] = {}
-    if linked_own is not None:
-        for delivery in linked_own.deliveries:
+    if linked is not None:
+        for delivery in linked.deliveries:
             if delivery.dismissed:
                 dismissals[delivery.dismissed] = dismissals.get(delivery.dismissed, 0) + 1
 
-    for appearance in ours:
+    batting: List[Dict[str, object]] = []
+    bowling: List[Dict[str, object]] = []
+    for appearance in lines:
         alias = aliases.alias_for(appearance)
         has_batted = appearance.batting and appearance.batting.balls_faced > 0
-        if has_batted and linked_own is not None:
+        if has_batted and linked is not None:
             line = appearance.batting
-            result.batting.append({
-                "date": info.date,
-                "opponent": info.opponent,
+            batting.append({
+                "date": date,
+                "opponent": opponent,
                 "player_name": alias,
                 "balls_faced": line.balls_faced,
                 "runs_scored": line.runs,
@@ -190,9 +183,9 @@ def build_game_rows(
             })
         if appearance.bowling and appearance.bowling.balls > 0:
             line = appearance.bowling
-            result.bowling.append({
-                "date": info.date,
-                "opponent": info.opponent,
+            bowling.append({
+                "date": date,
+                "opponent": opponent,
                 "player_name": alias,
                 "balls_bowled": line.balls,
                 "runs_conceded": line.runs,
@@ -201,12 +194,137 @@ def build_game_rows(
                 "no_balls": 0,
                 "source": SOURCE,
             })
-    if linked_own is None and any(a.batting for a in ours):
+    return batting, bowling, linked is not None
+
+
+def build_game_rows(
+    card: Scorecard,
+    info: GameInfo,
+    own_innings: Optional[ParsedInnings],
+    their_innings: Optional[ParsedInnings],
+    aliases: PlayerAliases,
+    opposition_aliases: Optional[PlayerAliases] = None,
+) -> GameRows:
+    """Build scorebook rows for one game.
+
+    Balls, runs, fours and sixes come from the scorecard; dismissals
+    per batter come from the ball-by-ball events (the scorecard has no
+    per-batter dismissal field, and U10 batters carry on after being
+    out). Without events for an innings its batting rows are skipped
+    rather than filled with zero dismissals, which would bias the
+    dismissal rate downwards; bowling rows need no events.
+
+    Args:
+        card: Parsed scorecard for the game.
+        info: Fixture facts (date, our side, opposition).
+        own_innings: Decoded events of our batting innings, or None.
+        their_innings: Decoded events of the opposition innings, or
+            None.
+        aliases: Alias map for our players, extended in place.
+        opposition_aliases: Alias map for opposition players. When
+            given, the opposition's rows are built too; they let the
+            model learn the grade's population, not just our squad.
+
+    Returns:
+        The rows and any warnings.
+    """
+    ours = card.side(info.our_side)
+    theirs = card.side("AWAY" if info.our_side == "HOME" else "HOME")
+    result = GameRows()
+
+    if own_innings is not None:
+        for problem in reconcile(ours, own_innings, theirs):
+            result.warnings.append(f"{info.game_id} own innings: {problem}")
+    if their_innings is not None:
+        for problem in reconcile(theirs, their_innings, ours):
+            result.warnings.append(f"{info.game_id} opposition innings: {problem}")
+
+    result.batting, result.bowling, had_own = _side_rows(
+        ours, theirs, own_innings, info.date, info.opponent, aliases
+    )
+    if not had_own and any(a.batting for a in ours):
         result.warnings.append(
             f"{info.game_id}: no ball-by-ball events for our innings; "
             "batting rows skipped (bowling rows kept)"
         )
+    if opposition_aliases is not None:
+        result.opp_batting, result.opp_bowling, _ = _side_rows(
+            theirs, ours, their_innings, info.date,
+            info.our_team or "our team", opposition_aliases,
+        )
     return result
+
+
+@dataclass
+class Fixture:
+    """One completed game from a team's fixture.
+
+    Attributes:
+        game_id: PlayHQ game ID.
+        date: ISO date of the game.
+        our_side: ``HOME`` or ``AWAY``.
+        opponent: Opposition team name.
+        our_team: Our team's name.
+        our_total: Our final team total, if published.
+        their_total: The opposition's final total, if published.
+    """
+
+    game_id: str
+    date: str
+    our_side: str
+    opponent: str
+    our_team: str = ""
+    our_total: Optional[int] = None
+    their_total: Optional[int] = None
+
+
+def _innings_total(side_result: Optional[Dict[str, object]]) -> Optional[int]:
+    """Read TOTAL_SCORE from the first innings of a fixture ``result`` side."""
+    for period in (side_result or {}).get("periods") or []:
+        if (period.get("period") or {}).get("value") not in (
+            "FIRST_INNINGS", "SECOND_INNINGS",
+        ):
+            continue
+        for stat in period.get("statistics") or []:
+            if (stat.get("type") or {}).get("value") == "TOTAL_SCORE":
+                return int(stat["count"])
+    return None
+
+
+def completed_games(fixture: Dict[str, object]) -> List[Fixture]:
+    """List a team's FINAL games with our side, the opposition and totals.
+
+    Args:
+        fixture: The ``team_fixture`` payload.
+
+    Returns:
+        Completed games in date order. Games where our team name is
+        on neither or both sides are left out.
+    """
+    team_name = (fixture.get("discoverTeam") or {}).get("name")
+    games: List[Fixture] = []
+    for rnd in fixture.get("discoverTeamFixture") or []:
+        for game in (rnd.get("fixture") or {}).get("games") or []:
+            if (game.get("status") or {}).get("value") != "FINAL":
+                continue
+            home = (game.get("home") or {}).get("name")
+            away = (game.get("away") or {}).get("name")
+            if (home == team_name) == (away == team_name):
+                continue
+            side = "HOME" if home == team_name else "AWAY"
+            result = game.get("result") or {}
+            home_total = _innings_total(result.get("home"))
+            away_total = _innings_total(result.get("away"))
+            games.append(Fixture(
+                game_id=game["id"],
+                date=str(game["date"])[:10],
+                our_side=side,
+                opponent=(away if side == "HOME" else home) or "",
+                our_team=team_name or "",
+                our_total=home_total if side == "HOME" else away_total,
+                their_total=away_total if side == "HOME" else home_total,
+            ))
+    return sorted(games, key=lambda g: g.date)
 
 
 def write_rows(

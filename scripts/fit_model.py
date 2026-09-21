@@ -49,6 +49,7 @@ TEMPLATES_DIR = REPO_ROOT / "data" / "templates"
 
 LOGGER_NAME = "fit_model"
 RANDOM_SEED = 20260921
+MAX_FIGURE_PLAYERS = 15
 
 PERIOD_LABELS = [
     "2024-25 U10 season",
@@ -341,12 +342,15 @@ def main() -> None:
         idata.posterior["mu_out"].mean(dim=("chain", "draw"))
     )
     shrinkage_path = OUTPUT_DIR / "shrinkage_p_out.png"
+    # With a whole grade in the fit, show only the busiest batters.
+    order = np.argsort(sample_sizes)[::-1][:MAX_FIGURE_PLAYERS]
+    order = np.sort(order)
     plot_shrinkage(
-        raw_rates=np.array(raw_rates),
-        posterior_means=posterior_means,
+        raw_rates=np.array(raw_rates)[order],
+        posterior_means=posterior_means[order],
         population_mean=population_mean,
-        sample_sizes=np.array(sample_sizes, dtype=float),
-        player_names=data.player_names,
+        sample_sizes=np.array(sample_sizes, dtype=float)[order],
+        player_names=[data.player_names[i] for i in order],
         metric_label="Dismissal hazard per ball",
         output_path=shrinkage_path,
     )

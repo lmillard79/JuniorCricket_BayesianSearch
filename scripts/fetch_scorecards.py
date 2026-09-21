@@ -25,8 +25,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -42,6 +40,7 @@ from junior_cricket.playhq_parse import AWAY, HOME, parse_events, parse_scorecar
 from junior_cricket.playhq_scorebook import (
     GameInfo,
     build_game_rows,
+    completed_games,
     load_aliases,
     save_aliases,
     write_rows,
@@ -52,16 +51,6 @@ RAW_DIR = REPO_ROOT / "data" / "raw" / "playhq"
 PROCESSED_DIR = REPO_ROOT / "data" / "processed"
 
 LOGGER_NAME = "fetch_scorecards"
-
-
-@dataclass
-class Fixture:
-    """One completed game from a team's fixture."""
-
-    game_id: str
-    date: str
-    our_side: str
-    opponent: str
 
 
 def _read(path: Path) -> Optional[Any]:
@@ -77,38 +66,6 @@ def _write(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=1, ensure_ascii=True)
-
-
-def completed_games(fixture: Dict[str, Any]) -> List[Fixture]:
-    """List a team's FINAL games with our side and the opposition.
-
-    Args:
-        fixture: The ``team_fixture`` payload.
-
-    Returns:
-        Completed games in date order. Games where our team name is
-        on neither or both sides are left out.
-    """
-    logger = logging.getLogger(LOGGER_NAME)
-    team_name = (fixture.get("discoverTeam") or {}).get("name")
-    games: List[Fixture] = []
-    for rnd in fixture.get("discoverTeamFixture") or []:
-        for game in (rnd.get("fixture") or {}).get("games") or []:
-            if (game.get("status") or {}).get("value") != "FINAL":
-                continue
-            home = (game.get("home") or {}).get("name")
-            away = (game.get("away") or {}).get("name")
-            if (home == team_name) == (away == team_name):
-                logger.warning("Game %s: cannot tell our side, skipped", game["id"])
-                continue
-            side = HOME if home == team_name else AWAY
-            games.append(Fixture(
-                game_id=game["id"],
-                date=str(game["date"])[:10],
-                our_side=side,
-                opponent=(away if side == HOME else home) or "",
-            ))
-    return sorted(games, key=lambda g: g.date)
 
 
 def main() -> None:
@@ -135,8 +92,11 @@ def main() -> None:
         return not args.offline and not blocked
 
     aliases = load_aliases(RAW_DIR / "player_map.csv")
+    opposition_aliases = load_aliases(RAW_DIR / "opposition_map.csv", prefix="O")
     batting_rows: List[Dict[str, object]] = []
     bowling_rows: List[Dict[str, object]] = []
+    opp_batting_rows: List[Dict[str, object]] = []
+    opp_bowling_rows: List[Dict[str, object]] = []
     warnings: List[str] = []
     n_cached = n_fetched = n_partial = n_missing = 0
 
@@ -202,16 +162,27 @@ def main() -> None:
                       if events[other] else None)
             rows = build_game_rows(
                 parse_scorecard(card_json),
-                GameInfo(game.game_id, game.date, game.our_side, game.opponent),
-                own, theirs, aliases,
+                GameInfo(game.game_id, game.date, game.our_side,
+                         game.opponent, game.our_team),
+                own, theirs, aliases, opposition_aliases,
             )
             batting_rows.extend(rows.batting)
             bowling_rows.extend(rows.bowling)
+            opp_batting_rows.extend(rows.opp_batting)
+            opp_bowling_rows.extend(rows.opp_bowling)
             warnings.extend(rows.warnings)
 
     batting = write_rows(batting_rows, BATTING_COLUMNS, PROCESSED_DIR / "playhq_batting.csv")
     bowling = write_rows(bowling_rows, BOWLING_COLUMNS, PROCESSED_DIR / "playhq_bowling.csv")
+    # Our squad plus the opposition, so the model learns the whole grade.
+    write_rows(opp_batting_rows, BATTING_COLUMNS, PROCESSED_DIR / "playhq_opp_batting.csv")
+    write_rows(opp_bowling_rows, BOWLING_COLUMNS, PROCESSED_DIR / "playhq_opp_bowling.csv")
+    write_rows(batting_rows + opp_batting_rows, BATTING_COLUMNS,
+               PROCESSED_DIR / "playhq_all_batting.csv")
+    write_rows(bowling_rows + opp_bowling_rows, BOWLING_COLUMNS,
+               PROCESSED_DIR / "playhq_all_bowling.csv")
     save_aliases(aliases, RAW_DIR / "player_map.csv")
+    save_aliases(opposition_aliases, RAW_DIR / "opposition_map.csv")
 
     logger.info(
         "Games: %d complete from cache, %d fetched now, %d incomplete "
@@ -220,8 +191,11 @@ def main() -> None:
     logger.info("Batting rows: %d (%d players); bowling rows: %d (%d players)",
                 len(batting), batting["player_name"].nunique() if len(batting) else 0,
                 len(bowling), bowling["player_name"].nunique() if len(bowling) else 0)
-    logger.info("Alias map (holds names, keep out of git): %s",
-                RAW_DIR / "player_map.csv")
+    logger.info("Opposition rows: %d batting, %d bowling (%d players)",
+                len(opp_batting_rows), len(opp_bowling_rows),
+                len(opposition_aliases.entries()))
+    logger.info("Alias maps (hold names, keep out of git): %s and %s",
+                RAW_DIR / "player_map.csv", RAW_DIR / "opposition_map.csv")
     for warning in warnings[:25]:
         logger.warning("Data note: %s", warning)
     if len(warnings) > 25:

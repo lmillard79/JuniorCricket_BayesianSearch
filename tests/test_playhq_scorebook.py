@@ -14,6 +14,7 @@ from junior_cricket.playhq_scorebook import (
     GameInfo,
     PlayerAliases,
     build_game_rows,
+    completed_games,
     load_aliases,
     save_aliases,
     write_rows,
@@ -80,7 +81,14 @@ def own_events():
     ], HOME)
 
 
-INFO = GameInfo("g1", "2025-10-11", HOME, "Opposition Team")
+INFO = GameInfo("g1", "2025-10-11", HOME, "Opposition Team", "Our Team")
+
+
+def their_events():
+    """Away innings: Sam Poe faces one ball and is bowled by Alex Ng."""
+    return parse_events([
+        event("Sam Poe was bowled by Alex Ng", "0.1", 1, "Alex Ng to Sam Poe", icon="W"),
+    ], "AWAY")
 
 
 def test_rows_use_aliases_and_carry_no_player_names(tmp_path: Path) -> None:
@@ -132,6 +140,65 @@ def test_disagreeing_events_raise_a_warning() -> None:
     ], HOME)
     rows = build_game_rows(make_card(), INFO, short, None, PlayerAliases())
     assert any("balls faced differ" in w for w in rows.warnings)
+
+
+def test_opposition_rows_use_their_own_alias_map() -> None:
+    """Opposition players get O-aliases and carry our team as opponent."""
+    ours, opposition = PlayerAliases(), PlayerAliases(prefix="O")
+    rows = build_game_rows(make_card(), INFO, own_events(), their_events(),
+                           ours, opposition)
+    assert [r["player_name"] for r in rows.opp_batting] == ["O01"]
+    assert rows.opp_batting[0]["dismissed"] == 1
+    assert rows.opp_batting[0]["opponent"] == "Our Team"
+    assert [r["player_name"] for r in rows.opp_bowling] == ["O01"]
+    assert rows.opp_bowling[0]["wickets"] == 2
+    assert {r["player_name"] for r in rows.batting} == {"P01", "P02"}   # ours unchanged
+    assert rows.warnings == []
+
+
+def test_opposition_rows_are_off_unless_requested() -> None:
+    rows = build_game_rows(make_card(), INFO, own_events(), their_events(), PlayerAliases())
+    assert rows.opp_batting == [] and rows.opp_bowling == []
+
+
+def test_opposition_batting_needs_their_events() -> None:
+    """Without the opposition's events their batting rows are skipped."""
+    rows = build_game_rows(make_card(), INFO, own_events(), None,
+                           PlayerAliases(), PlayerAliases(prefix="O"))
+    assert rows.opp_batting == []
+    assert len(rows.opp_bowling) == 1
+
+
+def _fixture_game(gid, date, home, away, status="FINAL", home_total=None, away_total=None):
+    def side(total):
+        if total is None:
+            return {"periods": []}
+        return {"periods": [{"period": {"value": "FIRST_INNINGS"}, "statistics": [
+            {"type": {"value": "TOTAL_SCORE"}, "count": total},
+            {"type": {"value": "TOTAL_OVERS"}, "count": 20}]}]}
+    return {"id": gid, "date": date, "status": {"value": status},
+            "home": {"name": home}, "away": {"name": away},
+            "result": {"home": side(home_total), "away": side(away_total)}}
+
+
+def test_completed_games_finds_our_side_and_totals() -> None:
+    fixture = {
+        "discoverTeam": {"name": "Us"},
+        "discoverTeamFixture": [
+            {"fixture": {"games": [
+                _fixture_game("g2", "2025-10-18T08:15", "Them", "Us", home_total=120, away_total=150),
+                _fixture_game("g1", "2025-10-11T08:15", "Us", "Them", home_total=109, away_total=108),
+                _fixture_game("g3", "2025-10-25T08:15", "Us", "Them", status="ABANDONED"),
+                _fixture_game("g4", "2025-11-01T08:15", "A", "B", home_total=1, away_total=2),
+            ]}},
+        ],
+    }
+    games = completed_games(fixture)
+    assert [g.game_id for g in games] == ["g1", "g2"]          # date order, no abandoned
+    first, second = games
+    assert (first.our_side, first.our_total, first.their_total) == ("HOME", 109, 108)
+    assert (second.our_side, second.our_total, second.their_total) == ("AWAY", 150, 120)
+    assert second.opponent == "Them" and second.our_team == "Us"
 
 
 def test_aliases_are_stable_and_round_trip(tmp_path: Path) -> None:

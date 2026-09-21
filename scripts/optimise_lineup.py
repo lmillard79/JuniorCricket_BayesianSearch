@@ -17,18 +17,18 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import logging
 from pathlib import Path
 from typing import Dict
 
 import arviz as az
-import numpy as np
 import pandas as pd
 
 from junior_cricket.figures import plot_run_differential
 from junior_cricket.logging_setup import setup_logging
 from junior_cricket.model import PopulationPriors
 from junior_cricket.optimizer import LineupOptimizer
+from junior_cricket.posterior import priors_from_posterior, skills_from_posterior
+from junior_cricket.rules_u11 import U11
 from junior_cricket.simulator import PlayerSkills
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -56,76 +56,6 @@ DEMO_SKILLS = {
     "Ike": dict(p_out=0.092, p_bound=0.026, srr=0.21,
                 p_wicket=0.032, econ=0.78, p_extra=0.17),
 }
-
-
-def skills_from_posterior(
-    idata, logger: logging.Logger
-) -> Dict[str, PlayerSkills]:
-    """Build mean-rate PlayerSkills from a fitted posterior.
-
-    Args:
-        idata: InferenceData with the projected rate variables.
-        logger: Logger for the audit trail.
-
-    Returns:
-        Player skills keyed by player name.
-    """
-    posterior = idata.posterior
-    players = list(posterior["p_out_final"].coords["player"].values)
-
-    def _mean(var: str) -> np.ndarray:
-        return np.asarray(posterior[var].mean(dim=("chain", "draw")))
-
-    p_out = _mean("p_out_final")
-    p_bound = _mean("p_bound_final")
-    p_wicket = _mean("p_wicket_final")
-    srr = _mean("srr_proj")
-    econ = _mean("econ_proj")
-    p_extra = _mean("p_extra_proj")
-
-    skills: Dict[str, PlayerSkills] = {}
-    for i, name in enumerate(players):
-        skills[str(name)] = PlayerSkills(
-            name=str(name),
-            p_out=float(p_out[i]),
-            p_bound=float(p_bound[i]),
-            srr=float(srr[i]),
-            p_wicket=float(p_wicket[i]),
-            econ=float(econ[i]),
-            p_extra=float(p_extra[i]),
-        )
-    logger.info("Loaded %d players from posterior", len(skills))
-    return skills
-
-
-def priors_from_posterior(idata) -> PopulationPriors:
-    """Extract population priors from the fitted posterior means.
-
-    Args:
-        idata: InferenceData with the population variables.
-
-    Returns:
-        Point-estimate population priors.
-    """
-    posterior = idata.posterior
-
-    def _mean(var: str) -> float:
-        return float(posterior[var].mean(dim=("chain", "draw")))
-
-    return PopulationPriors(
-        mu_out=_mean("mu_out"),
-        sigma_out=_mean("sigma_out"),
-        mu_bound=_mean("mu_bound"),
-        sigma_bound=_mean("sigma_bound"),
-        mu_srr=_mean("mu_srr"),
-        sigma_srr=_mean("sigma_srr"),
-        mu_wicket=_mean("mu_wicket"),
-        sigma_wicket=_mean("sigma_wicket"),
-        mu_econ=_mean("mu_econ"),
-        sigma_econ=_mean("sigma_econ"),
-        mu_extra=_mean("mu_extra"),
-        sigma_extra=_mean("sigma_extra"),
-    )
 
 
 def write_report(
@@ -217,6 +147,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run on synthetic skill rates for pipeline verification",
     )
+    parser.add_argument(
+        "--squad",
+        default=None,
+        help="Comma-separated player names/aliases to optimise (the game-day "
+        "squad). Needed when the posterior also holds opposition players.",
+    )
     parser.add_argument("--n-sims", type=int, default=400)
     parser.add_argument("--batting-evals", type=int, default=60)
     parser.add_argument("--bowling-evals", type=int, default=60)
@@ -248,8 +184,20 @@ def main() -> None:
                 "Run fit_model.py first, or use --demo."
             )
         idata = az.from_netcdf(posterior_path)
-        skills = skills_from_posterior(idata, logger)
+        squad = (
+            [s.strip() for s in args.squad.split(",") if s.strip()]
+            if args.squad else None
+        )
+        skills = skills_from_posterior(idata, players=squad)
         priors = priors_from_posterior(idata)
+        logger.info("Loaded %d players from posterior", len(skills))
+        if len(skills) not in U11.bowling_allocations:
+            raise SystemExit(
+                f"The lineup needs a squad of "
+                f"{sorted(U11.bowling_allocations)} players but {len(skills)} "
+                "were loaded. When the posterior includes opposition players, "
+                "name your squad: --squad P01,P02,..."
+            )
         logger.info(
             "Population priors: mu_out=%.3f mu_econ=%.2f",
             priors.mu_out,
