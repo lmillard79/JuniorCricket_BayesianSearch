@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project data and outputs
+data/raw/
+data/processed/
+data/outputs/
+log/
+*.nc
+
+# Devin session config
+.devin/

@@ -207,13 +207,15 @@ def _assign_periods(
     """Attach a period label to each row based on its date.
 
     Args:
-        frame: Scorebook DataFrame with a parsed ``date`` column.
+        frame: Scorebook DataFrame with a ``date`` column
+            (string or datetime; coerced to datetime here).
         periods: Period table from ``define_periods``.
 
     Returns:
         Copy of ``frame`` with ``period`` and ``period_idx`` columns.
     """
     frame = frame.copy()
+    frame["date"] = pd.to_datetime(frame["date"])
     frame["period"] = ""
     frame["period_idx"] = -1
     for idx, row in periods.iterrows():

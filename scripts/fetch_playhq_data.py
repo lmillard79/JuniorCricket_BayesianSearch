@@ -108,39 +108,40 @@ def fetch_grade_statistics(
         PlayHQAPIError: When the grade rejects statistics queries
             (statistics are tenant-configurable and may be off).
     """
-    first = client.grade_player_statistics(grade_id, page=1)
-    meta = first.get("meta", {})
-    total_pages = int(meta.get("totalPages", 1))
+    payload = client.grade_player_statistics(grade_id)
+    meta = payload.get("meta", {})
+    if int(meta.get("totalPages", 1)) > 1:
+        logger.warning(
+            "Grade %s statistics span %s pages; the public API "
+            "exposes only the first page - results may be truncated",
+            grade_id,
+            meta.get("totalPages"),
+        )
     logger.info(
-        "Grade statistics %s: %s records across %s pages",
+        "Grade statistics %s: %s records",
         grade_id,
         meta.get("totalRecords"),
-        total_pages,
     )
 
     rows = []
-    for page in range(1, max(total_pages, 1) + 1):
-        payload = first if page == 1 else client.grade_player_statistics(
-            grade_id, page=page
+    for result in payload.get("results", []):
+        profile = result.get("profile", {})
+        stat_values = [
+            detail.get("value")
+            for stat in result.get("statistics", [])
+            for detail in stat.get("details", [])
+        ]
+        rows.append(
+            {
+                "ranking": result.get("ranking"),
+                "profile_id": profile.get("id"),
+                "first_name": profile.get("firstName"),
+                "last_name": profile.get("lastName"),
+                "team": result.get("team", {}).get("name"),
+                "stat_count": len(stat_values),
+                "stat_values": ";".join(map(str, stat_values)),
+            }
         )
-        for result in payload.get("results", []):
-            profile = result.get("profile", {})
-            stat_values = [
-                detail.get("value")
-                for stat in result.get("statistics", [])
-                for detail in stat.get("details", [])
-            ]
-            rows.append(
-                {
-                    "ranking": result.get("ranking"),
-                    "profile_id": profile.get("id"),
-                    "first_name": profile.get("firstName"),
-                    "last_name": profile.get("lastName"),
-                    "team": result.get("team", {}).get("name"),
-                    "stat_count": len(stat_values),
-                    "stat_values": ";".join(map(str, stat_values)),
-                }
-            )
 
     frame = pd.DataFrame(rows)
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)

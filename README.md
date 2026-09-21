@@ -149,3 +149,63 @@ Bowling:
 - The format is explicitly non-competitive and developmental: the optimizer works WITHIN mandatory participation rules (all players bowl; retirement rules) and should be framed as a fun decision-support tool, not a win-maximiser that overrides participation
 - U11 exact playing format (Stage 1 pairs vs Stage 2) must be read from the BNJCA rules booklet before coding the simulator - do not assume
 - Small rosters mean the optimizer's differences may be within model noise: report uncertainty, not just the argmax order
+
+---
+
+## Implementation (status: pipeline built, pending first real-data run)
+
+### Quickstart
+
+```bash
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-dev.txt
+.venv/Scripts/python -m pip install -e .
+.venv/Scripts/python -m pytest tests/
+```
+
+### Pipeline entry points
+
+1. **Fetch PlayHQ data** (verified live against the BNJCA Girls Summer 2024/25 season):
+
+```bash
+python scripts/fetch_playhq_data.py --game-id f52ca224
+python scripts/fetch_playhq_data.py --grade-id 2bb24d79
+python scripts/fetch_playhq_data.py --stats-grade 2bb24d79
+```
+
+2. **Fit the MARCEL model** (synthetic demo verifies the full pipeline):
+
+```bash
+python scripts/fit_model.py --demo
+python scripts/fit_model.py --batting data/processed/batting.csv \
+    --bowling data/processed/bowling.csv --registry data/templates/player_registry_template.csv
+```
+
+3. **Optimise the lineup** (demo mode runs on synthetic skill rates):
+
+```bash
+python scripts/optimise_lineup.py --demo
+python scripts/optimise_lineup.py --posterior data/outputs/posterior_model.nc
+```
+
+Outputs land in `data/outputs/` (posterior netcdf, summary CSV, shrinkage
+figure, markdown recommendation, run-differential figure) with an audit log
+under `data/log/`.
+
+### Manual data entry (primary data path)
+
+BNJCA U10/U11 e-scoring is optional, so paper scorebooks are the main
+historical source. Templates live in `data/templates/`:
+
+- `batting_scorebook_template.csv` - one row per batter per innings
+- `bowling_scorebook_template.csv` - one row per bowler per innings
+- `player_registry_template.csv` - names, dates of birth (drives the
+  relative-age effect), wicketkeeper flags (drive bowling tiers)
+
+### Known issues
+
+- On machines without a C compiler, PyMC's default PyTensor NUTS sampler
+  crashes in the Python fallback linker. Use `--sampler numpyro` (requires
+  `pip install numpyro jax`) or install a C compiler. See PROJECT_STATUS.md.
+- The PlayHQ public GraphQL API exposes only the first page of grade
+  player statistics; large grades may be truncated (logged as a warning).

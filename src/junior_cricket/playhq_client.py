@@ -486,20 +486,25 @@ class PlayHQClient:
         return data or {}
 
     def grade_player_statistics(
-        self, grade_id: str, page: int = 1
+        self, grade_id: str, team_ids: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """Fetch paginated per-player statistics for a grade.
+        """Fetch per-player statistics for a grade.
+
+        The public endpoint returns the first page with ``meta``
+        pagination info; cricket tenants typically expose a single
+        page per grade. Filter by team IDs when provided.
 
         Args:
             grade_id: PlayHQ grade ID.
-            page: One-based page number to fetch.
+            team_ids: Optional list of team IDs to filter to.
 
         Returns:
             Dict with ``meta`` (page, totalPages, totalRecords) and
             ``results`` (ranking, profile, team, statistics).
         """
+        filter_value = {"teamIDs": team_ids} if team_ids else None
         data = self._execute(
             GRADE_PLAYER_STATISTICS_QUERY,
-            {"gradeID": grade_id, "filter": {"page": page}},
+            {"gradeID": grade_id, "filter": filter_value},
         )
         return data.get("gradePlayerStatistics", {}) if data else {}
