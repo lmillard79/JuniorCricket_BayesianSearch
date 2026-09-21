@@ -44,6 +44,7 @@ from junior_cricket.logging_setup import setup_logging
 from junior_cricket.playhq_parse import Appearance, parse_scorecard
 from junior_cricket.playhq_scorebook import PlayerAliases, completed_games
 from junior_cricket.posterior import priors_from_posterior, skills_from_posterior
+from junior_cricket.replay import key_to_alias, stub
 from junior_cricket.rules_u10 import U10
 from junior_cricket.simulator import (
     PlayerSkills,
@@ -66,18 +67,6 @@ QUANTITIES = {
     "their_total": "Opposition final total",
     "margin": "Margin (our total minus theirs)",
 }
-
-
-def key_to_alias(path: Path) -> Dict[str, str]:
-    """Map PlayHQ profile keys to pseudonyms."""
-    frame = pd.read_csv(path)
-    return dict(zip(frame["key"], frame["alias"]))
-
-
-def stub(name: str) -> PlayerSkills:
-    """A skills placeholder for the joint model, which reads effects by name."""
-    return PlayerSkills(name=name, p_out=0.05, p_bound=0.07, srr=0.5,
-                        p_wicket=0.04, econ=1.0, p_extra=0.0)
 
 
 def lineup(
