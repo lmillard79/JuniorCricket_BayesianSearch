@@ -2,13 +2,18 @@
 
 ## Junior Cricket Bayesian MARCEL - VDCC Lineup Optimiser
 
-Last updated: 2026-09-21 (personal PC, real-data validation, joint model)
+Last updated: 2026-09-22 (personal PC, game replays, U11 batting-strategy method)
+
+How to read every output: `docs/GUIDE.md`. U11 batting-order method, pilot
+results and pathway: `docs/BATTING_STRATEGY_METHOD.md`.
 
 ## Current state
 
 **Phase: real U10 data ingested and validated. A joint batter-by-bowler
 ball model fixes most of the simulator's bias and now drives the optimiser.
-What remains is a team fielding effect and the U10-to-U11 transfer.**
+Real games can be replayed and reshuffled, and U11 batting-order strategies
+are compared against an unknown opposition. What remains is a team fielding
+effect and the U10-to-U11 transfer.**
 
 | Component | Status | Where |
 | --- | --- | --- |
@@ -23,7 +28,9 @@ What remains is a team fielding effect and the U10-to-U11 transfer.**
 | U10 innings engine and totals check | Done | `simulator.py`, `scripts/check_u10_totals.py` |
 | U11 simulator and optimiser | Works; run-out bookkeeping fixed; accepts the joint model | `simulator.py`, `optimizer.py` |
 | Player report and private name translation | Done | `scripts/player_report.py`, `scripts/name_report.py` |
-| Tests | 104 passing | `tests/` |
+| **Game replays and decision studies** (U10) | Done. Over-by-over charts, percentile of each recorded result, batting-order and bowling-split studies | `replay.py`, `replay_plots.py`, `scripts/replay_games.py` |
+| **U11 batting-order strategies** | Done as a pilot. Paired worlds, named strategies, swap search on fresh worlds, 36-scenario stress grid | `strategies.py`, `scripts/compare_batting_strategies.py` |
+| Tests | 142 passing | `tests/` |
 
 ## Real data
 
@@ -121,9 +128,61 @@ individual bowlers explain), plus possible ball-count and position effects.
 * U11 batting order: best vs an average order +7.1 runs, worst -8.2 (single
   innings SD about 39), so roughly 3 to 4 win-probability points. The two
   power hitters score the same anywhere in slots 1 to 6; burying them in 8 and
-  9 costs about 15 runs.
+  9 costs about 15 runs. (Superseded in detail by the paired comparison below.)
 * U11 bowling split: the best allocation concedes about 4.5 fewer runs than an
   average split (about 10 fewer than the worst).
+
+## U10 game replays (12 full-length games; `scripts/replay_games.py`)
+
+Each game is rebuilt from its scorecard and ball rows (batting orders, the
+bowler of every over) and replayed 4,000 times, each replay drawing a fresh
+plausible set of player skills from the joint posterior (300 draws) and a typical
+ground. In-sample.
+
+* **Above or below the median?** Our recorded total was above the median replay
+  in 7 of 12 games (average percentile 61st); theirs in 6 of 12 (44th); the margin
+  in 9 of 12 (64th). A calibrated model sits near 50th, so the model is stingy
+  about our side (the known gap of about 10%); it is calibrated for the opposition.
+  Extremes: +116 recorded margin against a replay median of +41 (100th
+  percentile) on 2025-10-18, and -35 against +10 (6th) on 2026-01-31.
+* **Luck.** A single game's margin has a spread (1 SD) of about 28 runs with the
+  lineups fixed.
+* **Batting order.** Best of 40 random and 4 rule-of-thumb orders, screened on
+  2,000 replays and judged on 10,000 fresh ones: **+0.8 runs** of margin on average
+  (95% interval about +0.6 to +1.0). Random orders differ by only about 0.4 runs
+  (SD, corrected for simulation noise).
+* **Bowling split** (same overs, same bowlers, different shares; round-robin
+  sequence): **+0.7 runs** with the two keepers left as played; **+3.0** if the
+  keepers could also be chosen freely, which is optimistic because keeper skill is
+  not modelled. Random reassignments differ by about 0.8 runs (SD).
+* **Together** the best batting order and bowling split found would have added
+  about 0.18 expected wins across the 12 games.
+* **Shape of an innings.** Averaged over the games, recorded runs per over run above
+  the replay average in our innings from about over 10 to 18, and scatter around it
+  in theirs: a hint of something the model misses (a team effect or a
+  within-innings pattern), to be checked once the team effect is added.
+
+Data: the over number is now carried in `playhq_balls.csv` (one game has an over
+with a missing ball, which the stamp keeps aligned). Games left out: `ee765d0d`
+(shortened to 18 overs) and the two without ball-by-ball.
+
+## U11 batting-order strategies (`scripts/compare_batting_strategies.py`)
+
+Full method, table and pathway: `docs/BATTING_STRATEGY_METHOD.md`. In brief: each
+strategy is played through the same thousands of worlds (true skills drawn from
+the posterior, nine unknown opposition players from the grade, random or smart
+tactics, ground), so differences are paired; a swap search is judged on fresh worlds.
+
+Main scenario (retire at 35, U10 boundary rates, random attack), runs against
+strongest to weakest: strong-middle alternating -0.3 ± 0.3, balanced pairs (top
+six) -0.8 ± 0.4, strong-weak alternating -7.4 ± 0.4, weakest to strongest
+-18.7 ± 0.5, random orders -9.1 on average. The swap search found nothing better
+than strongest to weakest, and in none of 35 other scenarios (retirement 25, 30 or
+35; boundary shift 0, -0.7, -1.4; skill drift 0 or 0.3; random or smart attack) did
+any alternative beat it by more than 0.2 runs. The mechanism is who gets the balls:
+the six best batters face 17 to 20 balls each under the conventional order.
+Retiring everyone at 25 instead of 35 costs about 5 runs at the current ground
+size; a per-batter policy is not yet modelled.
 
 ## Caveats that matter for 2026/27
 
@@ -141,12 +200,15 @@ individual bowlers explain), plus possible ball-count and position effects.
 ## Next steps (in order)
 
 1. Add a team fielding effect (and test ball-count and position effects) to
-   the joint model; re-run the totals check.
-2. Wire wicketkeeper flags into the pipeline.
-3. Fetch the two missing games and 2024/25 (API key, or slowly later).
-4. When BNJCA publishes the 2026/27 U11 draw (Round 1 Sat 10 Oct 2026), get
-   the grade ID, fetch, fit, and optimise with `--squad` and `--ball-posterior`.
-   First U11 games give the first direct test of the transfer assumption.
+   the joint model; re-run the totals check and the replays.
+2. Confirm the U11 retirement rule, then add per-batter retirement policies to
+   the U11 engine and the strategy comparison.
+3. Wire wicketkeeper flags into the pipeline.
+4. Fetch the two missing games and 2024/25 (API key, or slowly later).
+5. When BNJCA publishes the 2026/27 U11 draw (Round 1 Sat 10 Oct 2026), get
+   the grade ID, fetch, fit, and rerun the strategy comparison and optimiser for
+   the real squad. First U11 games give the first direct test of the transfer
+   assumption (balls faced by batting position, boundary rate).
 
 ## Key decisions log
 
@@ -160,6 +222,14 @@ individual bowlers explain), plus possible ball-count and position effects.
   and `name_report.py` write private, gitignored named copies on request.
 - The 4-run U10 penalty goes to the fielding side's total (Rule 16.10(vi)).
 - Extras are not modelled when none are recorded; the population prior is used.
+- Order and bowling alternatives are compared on the same worlds (paired), screened
+  on one set of replays and judged on a fresh set, because picking the best of many
+  noisy estimates flatters it. The older optimiser's unpaired search is not used for
+  order questions.
+- Replays draw skills from a pool of posterior draws (not the posterior mean), so
+  intervals include uncertainty about each player as well as ball-to-ball luck.
+- A batter's value for ordering is the expected runs in a 30-ball stint with a
+  dismissal ending it.
 
 ## Environment notes
 

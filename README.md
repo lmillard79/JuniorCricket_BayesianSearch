@@ -4,6 +4,46 @@ https://www.pymc.io/projects/examples/en/latest/case_studies/rugby_analytics.htm
 https://www.pymc.io/projects/examples/en/latest/case_studies/hierarchical_partial_pooling.html
 https://bnjca.org.au/wp-content/uploads/2026/07/Quick-Reference-Rules.pdf
 
+## What this is, in plain language
+
+A model that learns how each junior player bats and bowls from PlayHQ's ball-by-ball
+records, and a simulator that plays whole innings under the BNJCA rules. Together they
+answer "what if" questions about batting order and bowling, with honest uncertainty
+instead of a single confident answer. It supports coaching decisions; it does not
+override the leagues' participation rules and it is not a forecast.
+
+**Start here**
+
+- [docs/GUIDE.md](docs/GUIDE.md): a tutorial on what has been built and how to read
+  every output, including what the figures in square brackets mean.
+- [docs/BATTING_STRATEGY_METHOD.md](docs/BATTING_STRATEGY_METHOD.md): the method and
+  pathway for testing U11 batting-order strategies (strong-weak pairing against
+  strongest to weakest) when the opposition is unknown, with pilot results.
+- [PROJECT_STATUS.md](PROJECT_STATUS.md) and [STATE.md](STATE.md): current status,
+  evidence and next steps.
+
+**What it has found so far** (VDCC U10 White 2025/26: 15 games, 13 with ball-by-ball)
+
+- Boundary hitting is the one strong, persistent, predictable batting skill. Bowlers
+  differ modestly in wickets and scoring shots, but not in boundaries.
+- Under U10 rules the batting order barely matters (about 1 run of margin) because every
+  batter gets a fixed 13 or 14 balls. Luck alone swings a game's margin by about 28 runs.
+- Under U11 rules order matters more. Strongest to weakest held up against every
+  alternative tried, including strong-weak pairings, across 36 sets of assumptions about
+  the move to U11. Pairing a strong batter with a weak one costs runs.
+- The model understates our own side by about 10%; a team fielding effect is the next
+  planned change. U11 results extrapolate from U10 skills and are indicative until U11
+  games have been played.
+
+**Reading a figure such as `17.1 [14.3, 20.1]`.** The model gives a spread of plausible
+values, not one number. 17.1 is the best estimate; the bracket is a 90% interval, so
+there is a 90% chance the true value lies between 14.3 and 20.1. A wide bracket means
+little data; players whose brackets overlap cannot be told apart.
+
+**Privacy.** The repository is public and the data concerns children. Model files, reports
+and commits use aliases (P01, O01 ...) only. Raw downloads and the alias-to-name maps live
+in gitignored folders; never commit or share a named copy of a report.
+
 ---
 created: 2026-09-21T07:15:07Z
 ---
@@ -219,7 +259,19 @@ python scripts/backtest.py --batting data/processed/playhq_batting.csv --bowling
 python scripts/check_u10_totals.py --team-id 75cdae66 --team-id fafdb4c4 --ball-posterior data/outputs/ball_posterior.nc --opposition real
 python scripts/optimise_lineup.py --posterior data/outputs/posterior_model.nc --ball-posterior data/outputs/ball_posterior.nc --squad P01,P03,P04,P05,P06,P07,P08,P09,P10
 python scripts/player_report.py --squad P01,P03,P04,P05,P06,P07,P08,P09,P10 --named
+python scripts/replay_games.py --team-id 75cdae66 --team-id fafdb4c4
+python scripts/compare_batting_strategies.py --search
 ```
+
+`replay_games.py` rebuilds every real U10 game and plays it thousands of times, showing
+where each recorded result sat against the model's median replay (over-by-over Manhattan
+and runs-accumulated charts, plus season and decision charts) and how far a different
+batting order or bowling split could have moved the margin. Alternatives are screened on
+one set of replays and judged on a fresh set. `compare_batting_strategies.py` plays named
+U11 batting-order strategies (and a swap search) through the same thousands of simulated
+worlds of unknown opposition, tactics and ground, then repeats over a grid of assumptions
+about the move to U11. Both write HTML reports under `data/outputs/` (gitignored). How to
+read them: [docs/GUIDE.md](docs/GUIDE.md).
 
 `fit_ball_model.py` fits the **joint batter-by-bowler ball model**, which is the
 recommended basis for player and lineup statements: each ball's outcome depends
