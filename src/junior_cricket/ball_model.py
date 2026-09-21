@@ -25,11 +25,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-import pymc as pm
+
+if TYPE_CHECKING:       # PyMC is imported where it is used, so simulation workers stay light
+    import pymc as pm
 
 COMPONENTS = ("d", "b", "s")
 LABELS = {
@@ -148,6 +150,8 @@ def build_ball_model(
         A ``pm.Model``. Switching the effect flags off gives the simpler
         variants the backtest compares against.
     """
+    import pymc as pm
+
     coords = {"player": data.players, "game": data.games}
     with pm.Model(coords=coords) as model:
         for name in COMPONENTS:
@@ -177,6 +181,8 @@ def fit_ball_model(
     seed: int = 0, **flags: bool,
 ):
     """Fit the joint model with the JAX sampler (no C compiler needed)."""
+    import pymc as pm
+
     model = build_ball_model(data, **flags)
     with model:
         return pm.sample(
@@ -189,6 +195,21 @@ def _flat(idata, var: str) -> np.ndarray:
     """Posterior draws of ``var`` stacked as (draws, ...)."""
     array = np.asarray(idata.posterior[var])
     return array.reshape((-1,) + array.shape[2:])
+
+
+def _posterior_arrays(idata) -> Dict[str, np.ndarray]:
+    """Every variable ``JointOutcomes`` reads, flattened once."""
+    names = [f"{p}_{c}" for p in ("a", "sb", "sw", "bat", "bowl") for c in COMPONENTS]
+    names += ["sg_b", "sg_s", "game_b", "game_s"]
+    return {n: _flat(idata, n) for n in names if n in idata.posterior}
+
+
+def _posterior_labels(idata) -> Tuple[List[str], List[str]]:
+    """(player labels, game labels) in the posterior's own order."""
+    players = [str(p) for p in idata.posterior["bat_d"].coords["player"].values]
+    games = ([str(g) for g in idata.posterior["game_b"].coords["game"].values]
+             if "game_b" in idata.posterior else [])
+    return players, games
 
 
 def held_out_lpd(idata, test: BallData, name: str, variant: str) -> float:
@@ -234,6 +255,9 @@ class JointOutcomes:
         bat_sd: Component -> spread of batting effects (for new players).
         bowl_sd: Component -> spread of bowling effects.
         game_sd: Component (``b``, ``s``) -> spread of game effects.
+        days: Game ID -> {``b``, ``s``} fitted conditions effect, for
+            replaying a real day (see ``use_day``).
+        draw: Posterior draw these effects came from; ``None`` for means.
     """
 
     def __init__(
@@ -244,33 +268,66 @@ class JointOutcomes:
         bat_sd: Dict[str, float],
         bowl_sd: Dict[str, float],
         game_sd: Dict[str, float],
+        days: Optional[Dict[str, Dict[str, float]]] = None,
+        draw: Optional[int] = None,
     ) -> None:
         self.a = intercepts
         self.bat = {k: dict(v) for k, v in bat.items()}
         self.bowl = {k: dict(v) for k, v in bowl.items()}
         self.bat_sd, self.bowl_sd, self.game_sd = bat_sd, bowl_sd, game_sd
         self.game = {"b": 0.0, "s": 0.0}
+        self.days = days or {}
+        self.draw = draw
 
     @classmethod
-    def from_posterior(cls, idata) -> "JointOutcomes":
-        """Build from posterior means."""
-        players = [str(p) for p in idata.posterior["bat_d"].coords["player"].values]
-        mean = lambda var: float(_flat(idata, var).mean())          # noqa: E731
-        per = lambda var: _flat(idata, var).mean(axis=0)            # noqa: E731
+    def from_posterior(cls, idata, draw: Optional[int] = None) -> "JointOutcomes":
+        """Build from posterior means, or from a single posterior draw.
+
+        Args:
+            idata: Posterior from ``fit_ball_model``.
+            draw: Index into the stacked chain-and-draw samples. ``None``
+                averages over all draws (the plug-in rule). An index gives
+                one plausible set of effects; simulating with a pool of
+                these (see ``pool``) carries the uncertainty about each
+                player's skill into the results.
+        """
+        return cls._build(_posterior_arrays(idata), _posterior_labels(idata), draw)
+
+    @classmethod
+    def pool(cls, idata, size: int, rng: np.random.Generator) -> List["JointOutcomes"]:
+        """Rules built from ``size`` distinct random posterior draws."""
+        arrays, labels = _posterior_arrays(idata), _posterior_labels(idata)
+        total = len(arrays["a_d"])
+        picks = rng.choice(total, size=min(size, total), replace=False)
+        return [cls._build(arrays, labels, int(i)) for i in picks]
+
+    @classmethod
+    def _build(cls, arrays, labels, draw: Optional[int]) -> "JointOutcomes":
+        players, games = labels
+        pick = (lambda a: a.mean(axis=0)) if draw is None else (lambda a: a[draw])   # noqa: E731
+        scalar = lambda var: float(pick(arrays[var]))                                # noqa: E731
         bat = {p: {} for p in players}
         bowl = {p: {} for p in players}
         for c in COMPONENTS:
             for prefix, table in (("bat", bat), ("bowl", bowl)):
-                values = per(f"{prefix}_{c}")
-                for p, v in zip(players, values):
+                for p, v in zip(players, pick(arrays[f"{prefix}_{c}"])):
                     table[p][c] = float(v)
+        days = {}
+        if "game_b" in arrays:
+            gb, gs = pick(arrays["game_b"]), pick(arrays["game_s"])
+            days = {g: {"b": float(b), "s": float(s)} for g, b, s in zip(games, gb, gs)}
         return cls(
-            intercepts={c: mean(f"a_{c}") for c in COMPONENTS},
+            intercepts={c: scalar(f"a_{c}") for c in COMPONENTS},
             bat=bat, bowl=bowl,
-            bat_sd={c: mean(f"sb_{c}") for c in COMPONENTS},
-            bowl_sd={c: mean(f"sw_{c}") for c in COMPONENTS},
-            game_sd={c: mean(f"sg_{c}") for c in ("b", "s")},
+            bat_sd={c: scalar(f"sb_{c}") for c in COMPONENTS},
+            bowl_sd={c: scalar(f"sw_{c}") for c in COMPONENTS},
+            game_sd={c: scalar(f"sg_{c}") for c in ("b", "s")},
+            days=days, draw=draw,
         )
+
+    def use_day(self, game_id: str) -> None:
+        """Fix the ground and conditions effect at a game's fitted value."""
+        self.game = dict(self.days[game_id])
 
     def register(self, name: str, rng: np.random.Generator) -> None:
         """Draw effects for a player not in the fitted data (an unknown opponent)."""

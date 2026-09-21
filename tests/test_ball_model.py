@@ -115,6 +115,35 @@ def test_fit_yields_outcomes_and_effect_tables(idata) -> None:
     assert (table["lo"] <= table["effect"]).all() and (table["effect"] <= table["hi"]).all()
 
 
+def test_a_posterior_draw_gives_one_plausible_set_of_effects(idata) -> None:
+    fitted, _ = idata
+    mean_rule = JointOutcomes.from_posterior(fitted)
+    one = JointOutcomes.from_posterior(fitted, draw=3)
+    other = JointOutcomes.from_posterior(fitted, draw=7)
+    assert mean_rule.draw is None and one.draw == 3
+    assert set(one.bat) == set(mean_rule.bat)
+    assert one.bat["P0"]["b"] != other.bat["P0"]["b"]
+    every = JointOutcomes.pool(fitted, 10_000, np.random.default_rng(0))   # 2 chains x 60 draws
+    assert len(every) == 120
+    assert np.mean([r.bat["P0"]["d"] for r in every]) == pytest.approx(mean_rule.bat["P0"]["d"])
+
+
+def test_a_pool_is_made_of_distinct_draws(idata) -> None:
+    fitted, _ = idata
+    pool = JointOutcomes.pool(fitted, 10, np.random.default_rng(1))
+    assert len({r.draw for r in pool}) == 10
+
+
+def test_use_day_fixes_the_games_fitted_conditions(idata) -> None:
+    fitted, data = idata
+    rule = JointOutcomes.from_posterior(fitted)
+    assert set(rule.days) == set(data.games)
+    rule.use_day("g2")
+    assert rule.game == rule.days["g2"]
+    rule.begin_game(np.random.default_rng(0))            # a typical day replaces it
+    assert rule.game != rule.days["g2"]
+
+
 def test_expected_run_constants_match_the_measured_shares() -> None:
     from junior_cricket.ball_model import _expected_boundary_runs, _expected_scoring_runs
     assert _expected_boundary_runs() == pytest.approx(4.215)

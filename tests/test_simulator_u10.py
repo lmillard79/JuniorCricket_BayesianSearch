@@ -76,6 +76,32 @@ def test_bowlers_bowl_their_allocated_overs() -> None:
     assert list(balls.values()) == [6 * o for o in ALLOCATIONS[9]]
 
 
+def test_the_over_by_over_record_adds_up() -> None:
+    result = innings(seed=3)
+    assert len(result.over_runs) == len(result.over_wickets) == len(result.over_bowlers) == 20
+    assert sum(result.over_runs) == result.runs
+    assert sum(result.over_wickets) == result.wickets
+
+
+def test_an_explicit_over_sequence_replays_the_generated_one() -> None:
+    cfg = config(squad())
+    generated = simulator.generate_over_sequence(
+        cfg["bowling_rotation"], cfg["bowling_allocation"], 20)
+    plain = simulate_innings_u10(squad(), rng=np.random.default_rng(4),
+                                 population_econ=0.8, **cfg)
+    explicit = simulate_innings_u10(squad(), rng=np.random.default_rng(4),
+                                    population_econ=0.8, over_sequence=generated, **cfg)
+    assert explicit.over_bowlers == generated == plain.over_bowlers
+    assert explicit.over_runs == plain.over_runs and explicit.runs == plain.runs
+
+
+def test_an_over_sequence_must_cover_every_over_with_a_fielder() -> None:
+    with pytest.raises(ValueError, match="over_sequence"):
+        innings(over_sequence=["P0"] * 19)
+    with pytest.raises(ValueError, match="over_sequence"):
+        innings(over_sequence=["nobody"] * 20)
+
+
 def test_wides_use_up_balls_and_score_to_the_striker() -> None:
     """Rules 16.8(iii), 16.10(vii): no extra balls; one run to the striker."""
     result = innings(field=squad(p_extra=1.0))

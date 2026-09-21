@@ -133,6 +133,10 @@ class InningsResult:
         batter_cards: Per-batter lines.
         bowler_cards: Per-bowler lines.
         all_out: Whether the innings ended on dismissals.
+        over_runs: Runs scored in each over (U10 engine only).
+        over_wickets: Dismissals in each over, run outs included (U10
+            engine only).
+        over_bowlers: Who bowled each over (U10 engine only).
     """
 
     runs: int
@@ -143,6 +147,9 @@ class InningsResult:
     batter_cards: List[BatterCard] = field(default_factory=list)
     bowler_cards: List[BowlerCard] = field(default_factory=list)
     all_out: bool = False
+    over_runs: List[int] = field(default_factory=list)
+    over_wickets: List[int] = field(default_factory=list)
+    over_bowlers: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -477,6 +484,8 @@ def simulate_innings(
             return True
         return False
 
+    over_runs: List[int] = []
+    over_wickets: List[int] = []
     for over in range(conditions.overs_per_innings):
         if wickets >= conditions.wickets_all_out:
             break
@@ -484,6 +493,8 @@ def simulate_innings(
         bowler_card = bowler_cards[bowler.name]
         fair_in_over = 0
         deliveries = 0
+        over_runs.append(0)
+        over_wickets.append(0)
 
         while (
             fair_in_over < conditions.fair_balls_per_over
@@ -495,6 +506,7 @@ def simulate_innings(
             if rng.random() < bowler.p_extra:
                 # Wide or no ball: one run, counts in batter's balls.
                 extras_runs += 1
+                over_runs[-1] += 1
                 bowler_card.extras += 1
                 cards[striker.name].balls += 1
                 if _try_retire(striker):
@@ -518,6 +530,7 @@ def simulate_innings(
             )
             if rng.random() < p_dismissal:
                 wickets += 1
+                over_wickets[-1] += 1
                 # A run out can dismiss either batter and no bowler is
                 # credited with it. Mark the batter who is actually out;
                 # marking the striker regardless left a "dismissed"
@@ -550,6 +563,7 @@ def simulate_innings(
                 )
             card.runs += runs
             card.boundaries += int(boundary)
+            over_runs[-1] += runs
 
             if _try_retire(striker):
                 replacement = _next_available()
@@ -582,6 +596,9 @@ def simulate_innings(
         batter_cards=list(cards.values()),
         bowler_cards=list(bowler_cards.values()),
         all_out=wickets >= conditions.wickets_all_out,
+        over_runs=over_runs,
+        over_wickets=over_wickets,
+        over_bowlers=list(over_sequence[:len(over_runs)]),
     )
 
 
@@ -597,6 +614,7 @@ def simulate_innings_u10(
     run_out_share: float = U10_RUN_OUT_SHARE,
     outcomes: Optional["BallOutcomes"] = None,
     enforce_bowling_table: bool = True,
+    over_sequence: Optional[Sequence[str]] = None,
 ) -> InningsResult:
     """Simulate one U10 innings ball by ball (BNJCA Rule 16).
 
@@ -630,10 +648,17 @@ def simulate_innings_u10(
             the rule table for the team size. Turn off to replay a real
             game whose team bowled a non-standard split; the overs must
             still total a full innings.
+        over_sequence: Who bowls each over, to replay a real game whose
+            overs did not follow the generated round robin. It must
+            name a fielder for every over of the innings; the
+            allocation and rotation are still validated as usual (pass
+            the counts and first-appearance order of the sequence).
 
     Returns:
         The completed innings; ``runs`` is runs scored by the batting
         team (sundries included) and ``wickets`` counts dismissals.
+        ``over_runs``, ``over_wickets`` and ``over_bowlers`` give the
+        over-by-over record.
 
     Raises:
         NotImplementedError: For formats where dismissed batters leave.
@@ -668,12 +693,21 @@ def simulate_innings_u10(
         raise ValueError("Bowling rotation must contain exactly the fielding players")
 
     allotments = conditions.batting_ball_allotments[size]
-    over_sequence = generate_over_sequence(
-        bowling_rotation, bowling_allocation, conditions.overs_per_innings
-    )
+    if over_sequence is None:
+        over_sequence = generate_over_sequence(
+            bowling_rotation, bowling_allocation, conditions.overs_per_innings
+        )
+    elif (len(over_sequence) != conditions.overs_per_innings
+          or any(name not in bowling_skills for name in over_sequence)):
+        raise ValueError(
+            "over_sequence must name a fielder for each of the "
+            f"{conditions.overs_per_innings} overs"
+        )
     overs = conditions.overs_per_innings if n_overs is None else min(
         n_overs, conditions.overs_per_innings
     )
+    over_runs: List[int] = []
+    over_wickets: List[int] = []
     cards = {p.name: BatterCard(name=p.name) for p in batting_skills}
     bowler_cards = {name: BowlerCard(name=name) for name in bowling_allocation}
     crease = [0, 1]                      # batting-order index: [striker, non-striker]
@@ -700,6 +734,8 @@ def simulate_innings_u10(
     for over in range(overs):
         bowler = bowling_skills[over_sequence[over]]
         bowler_card = bowler_cards[bowler.name]
+        over_runs.append(0)
+        over_wickets.append(0)
         for _ in range(conditions.fair_balls_per_over):
             striker = batting_skills[crease[0]]
             card = cards[striker.name]
@@ -714,12 +750,14 @@ def simulate_innings_u10(
                 extras_runs += 1
                 bowler_card.extras += 1
                 bowler_card.runs += 1
+                over_runs[-1] += 1
             elif rng.random() < (
                 outcomes.dismissal_probability(striker, bowler)
                 if outcomes is not None
                 else _combined_dismissal(striker.p_out, bowler.p_wicket)
             ):
                 wickets += 1
+                over_wickets[-1] += 1
                 card.dismissals += 1
                 run_out = rng.random() < run_out_share
                 striker_out = (not run_out) or (
@@ -741,6 +779,7 @@ def simulate_innings_u10(
                 card.runs += runs
                 card.boundaries += int(boundary)
                 bowler_card.runs += runs
+                over_runs[-1] += runs
             _retire_finished()
         crease[0], crease[1] = crease[1], crease[0]      # end of over
 
@@ -753,6 +792,9 @@ def simulate_innings_u10(
         batter_cards=list(cards.values()),
         bowler_cards=list(bowler_cards.values()),
         all_out=False,
+        over_runs=over_runs,
+        over_wickets=over_wickets,
+        over_bowlers=list(over_sequence[:overs]),
     )
 
 

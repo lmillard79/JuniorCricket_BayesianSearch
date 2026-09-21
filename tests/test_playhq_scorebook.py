@@ -168,6 +168,7 @@ def test_ball_rows_carry_batter_bowler_and_outcome_as_aliases() -> None:
     first = rows[0]
     assert (first["batter"], first["bowler"]) == ("P01", "O01")
     assert first["runs"] == 4 and first["boundary"] == 1 and first["dismissed"] == 0
+    assert first["over"] == 1                            # stamp 0.1 is the first over
     wicket = rows[2]
     assert wicket["dismissed"] == 1 and wicket["run_out"] == 0 and wicket["runs"] == 0
     reply = rows[-1]                                    # their innings: O01 bat, P01 bowl

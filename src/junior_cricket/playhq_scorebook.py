@@ -280,7 +280,7 @@ def build_game_rows(
 
 BALL_COLUMNS = [
     "date", "game_id", "batter", "bowler", "runs", "boundary",
-    "dismissed", "run_out",
+    "dismissed", "run_out", "over",
 ]
 
 
@@ -341,6 +341,9 @@ def build_ball_rows(
                 "boundary": int(delivery.runs in (4, 5, 6)),
                 "dismissed": int(delivery.dismissal is not None),
                 "run_out": int(delivery.dismissal == "run_out"),
+                # The scorer's over number (one-based), so an over with a
+                # missing ball stays aligned for over-by-over charts.
+                "over": delivery.over,
             })
     return rows, dropped
 
