@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
 
@@ -35,6 +35,20 @@ RUN_OUT_SHARE = 0.10
 U10_RUN_OUT_SHARE = 0.244
 RUN_OUT_STRIKER_SHARE = 0.83
 ECON_CLIP = (0.5, 2.0)
+
+
+class BallOutcomes(Protocol):
+    """Per-ball outcome rule an innings engine can use instead of skills.
+
+    ``junior_cricket.ball_model.JointOutcomes`` is the implementation
+    fitted from ball-by-ball data.
+    """
+
+    def dismissal_probability(self, striker, bowler) -> float:
+        """Probability that the ball is a dismissal."""
+
+    def runs(self, striker, bowler, rng: np.random.Generator) -> Tuple[int, bool]:
+        """Runs off a ball that is not a dismissal, and whether a boundary."""
 
 
 @dataclass
@@ -348,6 +362,7 @@ def simulate_innings(
     conditions: PlayingConditions = U11,
     population_econ: float = 0.55,
     retire_at_balls: Optional[int] = None,
+    outcomes: Optional["BallOutcomes"] = None,
 ) -> InningsResult:
     """Simulate one innings ball by ball under the encoded rules.
 
@@ -362,6 +377,9 @@ def simulate_innings(
         population_econ: Grade mean economy for bowler multipliers.
         retire_at_balls: Batting team's optional retirement
             threshold (>= 25); None means only the mandatory cap.
+        outcomes: Optional per-ball rule (see ``BallOutcomes``), for
+            example the joint batter-by-bowler model. When omitted the
+            hand-built combination of ``PlayerSkills`` rates is used.
 
     Returns:
         The completed innings result.
@@ -493,8 +511,10 @@ def simulate_innings(
             card = cards[striker.name]
             card.balls += 1
 
-            p_dismissal = _combined_dismissal(
-                striker.p_out, bowler.p_wicket
+            p_dismissal = (
+                outcomes.dismissal_probability(striker, bowler)
+                if outcomes is not None
+                else _combined_dismissal(striker.p_out, bowler.p_wicket)
             )
             if rng.random() < p_dismissal:
                 wickets += 1
@@ -522,7 +542,12 @@ def simulate_innings(
                     non_striker = replacement
                 continue
 
-            runs, boundary = _ball_runs(striker, bowler, population_econ, rng)
+            if outcomes is not None:
+                runs, boundary = outcomes.runs(striker, bowler, rng)
+            else:
+                runs, boundary = _ball_runs(
+                    striker, bowler, population_econ, rng
+                )
             card.runs += runs
             card.boundaries += int(boundary)
 
@@ -570,6 +595,8 @@ def simulate_innings_u10(
     population_econ: float = 0.55,
     n_overs: Optional[int] = None,
     run_out_share: float = U10_RUN_OUT_SHARE,
+    outcomes: Optional["BallOutcomes"] = None,
+    enforce_bowling_table: bool = True,
 ) -> InningsResult:
     """Simulate one U10 innings ball by ball (BNJCA Rule 16).
 
@@ -596,6 +623,13 @@ def simulate_innings_u10(
         n_overs: Overs to bowl if the game is shortened; defaults to
             the full innings.
         run_out_share: Share of dismissals that are run outs.
+        outcomes: Optional per-ball rule (see ``BallOutcomes``), for
+            example the joint batter-by-bowler model. When omitted the
+            hand-built combination of ``PlayerSkills`` rates is used.
+        enforce_bowling_table: Require the bowling allocation to match
+            the rule table for the team size. Turn off to replay a real
+            game whose team bowled a non-standard split; the overs must
+            still total a full innings.
 
     Returns:
         The completed innings; ``runs`` is runs scored by the batting
@@ -614,12 +648,19 @@ def simulate_innings_u10(
     if size not in conditions.batting_ball_allotments:
         raise ValueError(f"No batting allotment for a team of {size}")
     fielding_size = len(bowling_skills)
-    if sorted(bowling_allocation.values(), reverse=True) != sorted(
+    if enforce_bowling_table and sorted(
+        bowling_allocation.values(), reverse=True
+    ) != sorted(
         conditions.bowling_allocations.get(fielding_size, []), reverse=True
     ):
         raise ValueError(
             f"Bowling allocation {sorted(bowling_allocation.values(), reverse=True)} "
             f"does not match the rules for a team of {fielding_size}"
+        )
+    if sum(bowling_allocation.values()) != conditions.overs_per_innings:
+        raise ValueError(
+            f"Bowling allocation totals {sum(bowling_allocation.values())} "
+            f"overs, expected {conditions.overs_per_innings}"
         )
     if set(bowling_allocation) != set(bowling_skills):
         raise ValueError("Bowling allocation keys must match the fielding players")
@@ -673,8 +714,10 @@ def simulate_innings_u10(
                 extras_runs += 1
                 bowler_card.extras += 1
                 bowler_card.runs += 1
-            elif rng.random() < _combined_dismissal(
-                striker.p_out, bowler.p_wicket
+            elif rng.random() < (
+                outcomes.dismissal_probability(striker, bowler)
+                if outcomes is not None
+                else _combined_dismissal(striker.p_out, bowler.p_wicket)
             ):
                 wickets += 1
                 card.dismissals += 1
@@ -689,7 +732,12 @@ def simulate_innings_u10(
                     crease[0], crease[1] = crease[1], crease[0]
                 # A run-out non-striker stays at the crease; striker faces on.
             else:
-                runs, boundary = _ball_runs(striker, bowler, population_econ, rng)
+                if outcomes is not None:
+                    runs, boundary = outcomes.runs(striker, bowler, rng)
+                else:
+                    runs, boundary = _ball_runs(
+                        striker, bowler, population_econ, rng
+                    )
                 card.runs += runs
                 card.boundaries += int(boundary)
                 bowler_card.runs += runs

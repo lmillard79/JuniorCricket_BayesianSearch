@@ -13,10 +13,13 @@ from junior_cricket.playhq_parse import HOME, parse_events, parse_scorecard
 from junior_cricket.playhq_scorebook import (
     GameInfo,
     PlayerAliases,
+    alias_names,
+    build_ball_rows,
     build_game_rows,
     completed_games,
     load_aliases,
     save_aliases,
+    translate_aliases,
     write_rows,
 )
 
@@ -156,6 +159,33 @@ def test_opposition_rows_use_their_own_alias_map() -> None:
     assert rows.warnings == []
 
 
+def test_ball_rows_carry_batter_bowler_and_outcome_as_aliases() -> None:
+    """One row per delivery, both innings, aliases only."""
+    ours, theirs = PlayerAliases(), PlayerAliases(prefix="O")
+    rows, dropped = build_ball_rows(make_card(), INFO, own_events(), their_events(),
+                                    ours, theirs)
+    assert dropped == 0 and len(rows) == 7             # 6 of ours + 1 of theirs
+    first = rows[0]
+    assert (first["batter"], first["bowler"]) == ("P01", "O01")
+    assert first["runs"] == 4 and first["boundary"] == 1 and first["dismissed"] == 0
+    wicket = rows[2]
+    assert wicket["dismissed"] == 1 and wicket["run_out"] == 0 and wicket["runs"] == 0
+    reply = rows[-1]                                    # their innings: O01 bat, P01 bowl
+    assert (reply["batter"], reply["bowler"]) == ("O01", "P01")
+    assert reply["dismissed"] == 1
+    text = str(rows)
+    for name in NAMES:
+        for token in name.split():
+            assert token not in text
+
+
+def test_ball_rows_skip_innings_without_events() -> None:
+    rows, _ = build_ball_rows(make_card(), INFO, own_events(), None,
+                              PlayerAliases(), PlayerAliases(prefix="O"))
+    assert len(rows) == 6
+    assert all(r["batter"].startswith("P") for r in rows)
+
+
 def test_opposition_rows_are_off_unless_requested() -> None:
     rows = build_game_rows(make_card(), INFO, own_events(), their_events(), PlayerAliases())
     assert rows.opp_batting == [] and rows.opp_bowling == []
@@ -199,6 +229,25 @@ def test_completed_games_finds_our_side_and_totals() -> None:
     assert (first.our_side, first.our_total, first.their_total) == ("HOME", 109, 108)
     assert (second.our_side, second.our_total, second.their_total) == ("AWAY", 150, 120)
     assert second.opponent == "Them" and second.our_team == "Us"
+
+
+def test_translate_aliases_replaces_whole_aliases_only() -> None:
+    names = {"P01": "Alex Ng", "O12": "Sam Poe"}
+    text = "P01 opens; P010 and P99 are unknown; O12 bowls; XP01 stays."
+    assert translate_aliases(text, names) == (
+        "Alex Ng opens; P010 and P99 are unknown; Sam Poe bowls; XP01 stays."
+    )
+
+
+def test_alias_names_reads_the_maps(tmp_path: Path) -> None:
+    ours, theirs = PlayerAliases(), PlayerAliases(prefix="O")
+    card = make_card()
+    ours.alias_for(card.home[0])
+    theirs.alias_for(card.away[0])
+    save_aliases(ours, tmp_path / "a.csv")
+    save_aliases(theirs, tmp_path / "b.csv")
+    names = alias_names(tmp_path / "a.csv", tmp_path / "b.csv", tmp_path / "missing.csv")
+    assert names == {"P01": "Alex Ng", "O01": "Sam Poe"}
 
 
 def test_aliases_are_stable_and_round_trip(tmp_path: Path) -> None:

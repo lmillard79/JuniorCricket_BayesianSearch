@@ -197,6 +197,29 @@ def _side_rows(
     return batting, bowling, linked is not None
 
 
+def alias_names(*paths: Path) -> Dict[str, str]:
+    """Read alias -> name from alias-map files (these hold real names)."""
+    names: Dict[str, str] = {}
+    for path in paths:
+        if path.exists():
+            with path.open(newline="", encoding="utf-8") as handle:
+                names.update({r["alias"]: r["name"] for r in csv.DictReader(handle)})
+    return names
+
+
+def translate_aliases(text: str, names: Dict[str, str]) -> str:
+    """Replace aliases (P01, O12, ...) in a report with player names.
+
+    Only whole aliases are replaced, so ``P01`` never touches ``P010``;
+    aliases with no known name are left as they are. The result holds real
+    names: write it only to a private, gitignored location.
+    """
+    def swap(match: "re.Match[str]") -> str:
+        return names.get(match.group(0), match.group(0))
+
+    return re.sub(r"\b[PO]\d{2,3}\b", swap, text)
+
+
 def build_game_rows(
     card: Scorecard,
     info: GameInfo,
@@ -253,6 +276,73 @@ def build_game_rows(
             info.our_team or "our team", opposition_aliases,
         )
     return result
+
+
+BALL_COLUMNS = [
+    "date", "game_id", "batter", "bowler", "runs", "boundary",
+    "dismissed", "run_out",
+]
+
+
+def build_ball_rows(
+    card: Scorecard,
+    info: GameInfo,
+    own_innings: Optional[ParsedInnings],
+    their_innings: Optional[ParsedInnings],
+    aliases: PlayerAliases,
+    opposition_aliases: PlayerAliases,
+) -> Tuple[List[Dict[str, object]], int]:
+    """One row per delivery, with batter and bowler as aliases.
+
+    This is the input to the joint batter-by-bowler model: every ball
+    records who batted, who bowled and what happened, so batter and
+    bowler effects can be separated instead of each absorbing the
+    other's opposition.
+
+    Args:
+        card: Parsed scorecard for the game.
+        info: Fixture facts.
+        own_innings: Decoded events of our batting innings, or None.
+        their_innings: Decoded events of the opposition innings, or None.
+        aliases: Alias map for our players.
+        opposition_aliases: Alias map for the opposition.
+
+    Returns:
+        (rows, number of deliveries dropped because a name could not be
+        linked to a scorecard player).
+    """
+    ours = card.side(info.our_side)
+    theirs = card.side("AWAY" if info.our_side == "HOME" else "HOME")
+    alias_of = {("ours", a.name): aliases.alias_for(a) for a in ours}
+    alias_of.update(
+        {("theirs", a.name): opposition_aliases.alias_for(a) for a in theirs}
+    )
+    rows: List[Dict[str, object]] = []
+    dropped = 0
+    for innings, we_bat in ((own_innings, True), (their_innings, False)):
+        if innings is None:
+            continue
+        batting, fielding = (ours, theirs) if we_bat else (theirs, ours)
+        linked = link_innings(innings, batting, fielding)
+        bat_key, bowl_key = ("ours", "theirs") if we_bat else ("theirs", "ours")
+        for delivery in linked.deliveries:
+            batter = alias_of.get((bat_key, delivery.striker))
+            bowler = alias_of.get((bowl_key, delivery.bowler))
+            if batter is None or bowler is None:
+                dropped += 1
+                continue
+            rows.append({
+                "date": info.date,
+                "game_id": info.game_id,
+                "batter": batter,
+                "bowler": bowler,
+                "runs": delivery.runs,
+                # Fours, sixes and a four plus an overthrow ("5+").
+                "boundary": int(delivery.runs in (4, 5, 6)),
+                "dismissed": int(delivery.dismissal is not None),
+                "run_out": int(delivery.dismissal == "run_out"),
+            })
+    return rows, dropped
 
 
 @dataclass

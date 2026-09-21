@@ -23,6 +23,7 @@ from typing import Dict
 import arviz as az
 import pandas as pd
 
+from junior_cricket.ball_model import JointOutcomes
 from junior_cricket.figures import plot_run_differential
 from junior_cricket.logging_setup import setup_logging
 from junior_cricket.model import PopulationPriors
@@ -153,6 +154,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated player names/aliases to optimise (the game-day "
         "squad). Needed when the posterior also holds opposition players.",
     )
+    parser.add_argument(
+        "--ball-posterior",
+        default=None,
+        help="Joint batter-by-bowler posterior from fit_ball_model.py. When "
+        "given it decides every ball (recommended); the per-player posterior "
+        "then only seeds the search.",
+    )
     parser.add_argument("--n-sims", type=int, default=400)
     parser.add_argument("--batting-evals", type=int, default=60)
     parser.add_argument("--bowling-evals", type=int, default=60)
@@ -204,10 +212,18 @@ def main() -> None:
             priors.mu_econ,
         )
 
+    outcomes = None
+    if args.ball_posterior:
+        outcomes = JointOutcomes.from_posterior(az.from_netcdf(args.ball_posterior))
+        missing = [n for n in skills if n not in outcomes.bat]
+        if missing:
+            raise SystemExit(f"Not in the joint posterior: {missing}")
+        logger.info("Ball outcomes from the joint batter-by-bowler model")
     optimizer = LineupOptimizer(
         player_skills=skills,
         priors=priors,
         n_sims=args.n_sims,
+        outcomes=outcomes,
     )
     logger.info(
         "Starting optimisation: %d sims per candidate, "

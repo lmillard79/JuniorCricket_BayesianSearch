@@ -28,6 +28,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
+
 from junior_cricket.data_loader import BATTING_COLUMNS, BOWLING_COLUMNS
 from junior_cricket.logging_setup import setup_logging
 from junior_cricket.playhq_client import (
@@ -38,7 +40,9 @@ from junior_cricket.playhq_client import (
 )
 from junior_cricket.playhq_parse import AWAY, HOME, parse_events, parse_scorecard
 from junior_cricket.playhq_scorebook import (
+    BALL_COLUMNS,
     GameInfo,
+    build_ball_rows,
     build_game_rows,
     completed_games,
     load_aliases,
@@ -97,6 +101,7 @@ def main() -> None:
     bowling_rows: List[Dict[str, object]] = []
     opp_batting_rows: List[Dict[str, object]] = []
     opp_bowling_rows: List[Dict[str, object]] = []
+    ball_rows: List[Dict[str, object]] = []
     warnings: List[str] = []
     n_cached = n_fetched = n_partial = n_missing = 0
 
@@ -171,6 +176,17 @@ def main() -> None:
             opp_batting_rows.extend(rows.opp_batting)
             opp_bowling_rows.extend(rows.opp_bowling)
             warnings.extend(rows.warnings)
+            game_balls, dropped = build_ball_rows(
+                parse_scorecard(card_json),
+                GameInfo(game.game_id, game.date, game.our_side,
+                         game.opponent, game.our_team),
+                own, theirs, aliases, opposition_aliases,
+            )
+            ball_rows.extend(game_balls)
+            if dropped:
+                warnings.append(
+                    f"{game.game_id}: {dropped} deliveries dropped (name not linked)"
+                )
 
     batting = write_rows(batting_rows, BATTING_COLUMNS, PROCESSED_DIR / "playhq_batting.csv")
     bowling = write_rows(bowling_rows, BOWLING_COLUMNS, PROCESSED_DIR / "playhq_bowling.csv")
@@ -183,6 +199,12 @@ def main() -> None:
                PROCESSED_DIR / "playhq_all_bowling.csv")
     save_aliases(aliases, RAW_DIR / "player_map.csv")
     save_aliases(opposition_aliases, RAW_DIR / "opposition_map.csv")
+    balls = pd.DataFrame(ball_rows, columns=BALL_COLUMNS).sort_values(
+        ["date", "game_id"], kind="stable"
+    )
+    balls.to_csv(PROCESSED_DIR / "playhq_balls.csv", index=False)
+    logger.info("Ball rows: %d deliveries across %d games -> playhq_balls.csv",
+                len(balls), balls["game_id"].nunique() if len(balls) else 0)
 
     logger.info(
         "Games: %d complete from cache, %d fetched now, %d incomplete "

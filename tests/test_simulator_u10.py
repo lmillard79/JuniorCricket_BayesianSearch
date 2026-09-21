@@ -114,6 +114,64 @@ def test_shortened_game_stops_early() -> None:
         result.batter_cards, [14, 14, 14, 13, 13, 13, 13, 13, 13]))
 
 
+class Scripted:
+    """A per-ball rule with fixed answers, to prove the engine defers to it."""
+
+    def __init__(self, p_dismiss: float, runs: int) -> None:
+        self.p_dismiss, self._runs, self.calls = p_dismiss, runs, 0
+
+    def dismissal_probability(self, striker, bowler) -> float:
+        self.calls += 1
+        return self.p_dismiss
+
+    def runs(self, striker, bowler, rng):
+        return self._runs, self._runs >= 4
+
+
+def test_engine_uses_an_injected_outcome_rule() -> None:
+    """With outcomes supplied, skills no longer decide the ball."""
+    rule = Scripted(p_dismiss=0.0, runs=2)
+    result = innings(bat=squad(p_out=0.9), field=squad(p_wicket=0.9), outcomes=rule)
+    assert result.wickets == 0                       # the rule says no dismissals
+    assert result.runs == 240                        # 120 balls x 2 runs
+    assert rule.calls == 120
+    always_out = innings(outcomes=Scripted(p_dismiss=1.0, runs=6))
+    assert always_out.wickets == 120 and always_out.runs == 0
+
+
+def test_u11_engine_uses_an_injected_outcome_rule() -> None:
+    """The U11 engine defers to the same per-ball rule."""
+    players = squad()
+    allocation = dict(zip((p.name for p in players), [4, 4, 3, 3, 3, 3, 3, 1, 1]))
+    args = (players, {p.name: p for p in players}, [p.name for p in players], allocation)
+    calm = simulate_innings(*args, np.random.default_rng(2),
+                            outcomes=Scripted(p_dismiss=0.0, runs=1))
+    assert calm.wickets == 0 and calm.runs == 150      # 25 overs x 6 balls x 1 run
+    doomed = simulate_innings(*args, np.random.default_rng(2),
+                              outcomes=Scripted(p_dismiss=1.0, runs=6))
+    assert doomed.wickets == U11.wickets_all_out and doomed.runs == 0
+
+
+def test_a_replay_may_use_a_non_standard_bowling_split_but_not_a_short_one() -> None:
+    """Real teams sometimes bowl another split; the overs must still total 20."""
+    field = squad()
+    names = [p.name for p in field]
+    odd = dict(zip(names, [4, 3, 3, 3, 2, 2, 1, 1, 1]))          # totals 20, not the table
+    args = dict(bowling_skills={p.name: p for p in field}, bowling_rotation=names)
+    with pytest.raises(ValueError):
+        simulate_innings_u10(squad(), bowling_allocation=odd,
+                             rng=np.random.default_rng(0), **args)
+    result = simulate_innings_u10(squad(), bowling_allocation=odd,
+                                  rng=np.random.default_rng(0),
+                                  enforce_bowling_table=False, **args)
+    assert result.fair_balls == 120
+    short = dict(zip(names, [3, 3, 3, 3, 2, 2, 1, 1, 1]))        # totals 19
+    with pytest.raises(ValueError):
+        simulate_innings_u10(squad(), bowling_allocation=short,
+                             rng=np.random.default_rng(0),
+                             enforce_bowling_table=False, **args)
+
+
 def test_illegal_configurations_are_rejected() -> None:
     with pytest.raises(ValueError):
         innings(bat=squad(4), field=squad(9))                 # no allotment for 4

@@ -80,6 +80,11 @@ class LineupOptimizer:
         n_sims: Simulations per candidate evaluation.
         seed: Base random seed; candidate evaluations derive
             stable sub-seeds for low-variance comparisons.
+        outcomes: Optional joint batter-by-bowler per-ball rule (see
+            ``ball_model.JointOutcomes``). When given, it decides every
+            ball; ``player_skills`` then only seed the search and supply
+            each player's extras rate. Opposition players are registered
+            with it as they are drawn.
     """
 
     def __init__(
@@ -89,12 +94,14 @@ class LineupOptimizer:
         conditions: PlayingConditions = U11,
         n_sims: int = 400,
         seed: int = 20260921,
+        outcomes=None,
     ) -> None:
         self.skills = dict(player_skills)
         self.priors = priors
         self.conditions = conditions
         self.n_sims = n_sims
         self.base_seed = seed
+        self.outcomes = outcomes
 
     # ------------------------------------------------------------------
     # Seed heuristics
@@ -183,10 +190,16 @@ class LineupOptimizer:
         self, rng: np.random.Generator
     ) -> List[PlayerSkills]:
         """Draw nine opposition players from the population."""
-        return [
+        opponents = [
             draw_population_player(self.priors, rng, name=f"opp_{i}")
             for i in range(9)
         ]
+        if self.outcomes is not None:
+            # A new ground and new opponents for every simulated match.
+            self.outcomes.begin_game(rng)
+            for player in opponents:
+                self.outcomes.register(player.name, rng)
+        return opponents
 
     def evaluate_batting(
         self,
@@ -228,6 +241,7 @@ class LineupOptimizer:
                 conditions=self.conditions,
                 population_econ=self.priors.mu_econ,
                 retire_at_balls=retire_at_balls,
+                outcomes=self.outcomes,
             )
             totals[sim] = result.runs
         return totals
@@ -259,6 +273,7 @@ class LineupOptimizer:
                 rng=rng,
                 conditions=self.conditions,
                 population_econ=self.priors.mu_econ,
+                outcomes=self.outcomes,
             )
             totals[sim] = result.runs
         return totals
