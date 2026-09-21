@@ -1,0 +1,3 @@
+date,opponent,player_name,balls_faced,runs_scored,fours,sixes,dismissed,retired,source
+2026-10-10,Example CC,Sample Player,17,12,1,0,1,0,manual
+2026-10-10,Example CC,Another Player,25,18,2,0,0,1,manual
