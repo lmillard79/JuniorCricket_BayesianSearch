@@ -152,7 +152,10 @@ Bowling:
 
 ---
 
-## Implementation (status: pipeline built, pending first real-data run)
+## Implementation (status: real U10 data ingested and validated; simulator calibration open)
+
+Current status, validation results and next steps: `PROJECT_STATUS.md` and
+`STATE.md`.
 
 ### Quickstart
 
@@ -192,6 +195,34 @@ Outputs land in `data/outputs/` (posterior netcdf, summary CSV, shrinkage
 figure, markdown recommendation, run-differential figure) with an audit log
 under `data/log/`.
 
+### Real-data workflow (PlayHQ scorecards and ball-by-ball)
+
+The public PlayHQ site publishes per-player scorecards and ball-by-ball events
+for e-scored games. These scripts pull them for a team and build scorebook CSVs
+in the same schema as the manual templates, with **aliases (P01, ...) instead of
+names**.
+
+```bash
+python scripts/fetch_scorecards.py --team-id 75cdae66 --team-id fafdb4c4
+```
+
+Everything fetched is cached under `data/raw/playhq/` (it holds player names and
+is gitignored), so re-runs resume and never request a game twice. `--offline`
+builds from the cache only, and `--max-games N` limits a run. It writes
+`playhq_batting.csv` and `playhq_bowling.csv` (our squad), the opposition's rows,
+and `playhq_all_*.csv` (both, so the model learns the whole grade). Then:
+
+```bash
+python scripts/fit_model.py --batting data/processed/playhq_all_batting.csv --bowling data/processed/playhq_all_bowling.csv --sampler numpyro
+python scripts/backtest.py --batting data/processed/playhq_batting.csv --bowling data/processed/playhq_bowling.csv
+python scripts/check_u10_totals.py --team-id 75cdae66 --team-id fafdb4c4
+python scripts/optimise_lineup.py --posterior data/outputs/posterior_model.nc --squad P01,P03,P04,P05,P06,P07,P08,P09,P10
+```
+
+`fit_model.py` uses the v2 model by default (`--model v1` is the original
+specification, which does not sample real data). `--squad` names the players to
+optimise when the posterior also holds opposition players.
+
 ### Manual data entry (primary data path)
 
 BNJCA U10/U11 e-scoring is optional, so paper scorebooks are the main
@@ -205,7 +236,20 @@ historical source. Templates live in `data/templates/`:
 ### Known issues
 
 - On machines without a C compiler, PyMC's default PyTensor NUTS sampler
-  crashes in the Python fallback linker. Use `--sampler numpyro` (requires
-  `pip install numpyro jax`) or install a C compiler. See PROJECT_STATUS.md.
-- The PlayHQ public GraphQL API exposes only the first page of grade
-  player statistics; large grades may be truncated (logged as a warning).
+  crashes in the Python fallback linker. Use `--sampler numpyro` (numpyro and
+  jax are in `requirements.txt`). The "g++ not available" line is then harmless.
+- PlayHQ's public endpoints rate-limit bursts: a burst earns a CloudFront 403.
+  The client spaces requests (2.5 s) and stops for good on the first 403 or
+  429. If it stops, wait before re-running; the fetch resumes from the cache.
+  PlayHQ's documented API (https://docs.playhq.com/tech/) needs an API key
+  from PlayHQ, which is the proper route for anything ongoing.
+- The two PlayHQ services take different tenant headers: `api.playhq.com`
+  wants `tenant: cricket-australia` (with `ca` per-innings scores come back
+  empty) and the spectator service wants `x-phq-tenant: ca`.
+- `gradePlayerStatistics` returns rows with empty statistics; use the
+  scorecards instead.
+- The GitHub repo is public and PlayHQ data holds children's names. Keep raw
+  pulls and the alias maps out of git (`data/raw/` is gitignored), and stage
+  files explicitly.
+- The simulator's absolute totals run 14 to 20% low against real U10 games
+  (the winning margin is right). See PROJECT_STATUS.md for the diagnosis.
