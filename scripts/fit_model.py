@@ -38,6 +38,7 @@ from junior_cricket.logging_setup import setup_logging
 from junior_cricket.model import (
     ModelData,
     build_marcel_model,
+    build_marcel_model_v2,
     prepare_model_data,
 )
 
@@ -74,6 +75,20 @@ SUMMARY_VARS = [
     "srr_proj",
     "econ_proj",
     "p_extra_proj",
+]
+
+# v2: working-scale population mean (m), between-player skill spread (s)
+# and period-to-period drift (tau) per family, plus the projections.
+SUMMARY_VARS_V2 = [
+    f"{prefix}_{family}"
+    for family in ("out", "bound", "wicket", "srr", "econ")
+    for prefix in ("m", "s", "tau")
+] + [
+    "p_out_final",
+    "p_bound_final",
+    "p_wicket_final",
+    "srr_proj",
+    "econ_proj",
 ]
 
 
@@ -172,6 +187,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--draws", type=int, default=1000)
     parser.add_argument("--tune", type=int, default=1000)
     parser.add_argument(
+        "--model",
+        choices=["v2", "v1"],
+        default="v2",
+        help="'v2' non-centred local-level model (default); 'v1' is the "
+        "original specification, which does not sample on real data",
+    )
+    parser.add_argument(
         "--sampler",
         choices=["nuts", "numpyro"],
         default="nuts",
@@ -242,8 +264,15 @@ def main() -> None:
         int(data.balls_faced.sum()),
     )
 
-    model = build_marcel_model(data)
-    logger.info("Model built; starting NUTS sampling (%s)", args.sampler)
+    if args.model == "v2":
+        model = build_marcel_model_v2(data)
+        summary_vars = SUMMARY_VARS_V2
+    else:
+        model = build_marcel_model(data)
+        summary_vars = SUMMARY_VARS
+    logger.info(
+        "Model %s built; starting NUTS sampling (%s)", args.model, args.sampler
+    )
     if args.sampler == "numpyro":
         try:
             import numpyro  # noqa: F401
@@ -274,11 +303,13 @@ def main() -> None:
             )
     logger.info("Sampling complete")
 
-    summary = az.summary(idata, var_names=SUMMARY_VARS)
+    summary = az.summary(idata, var_names=summary_vars)
     divergences = int(idata.sample_stats["diverging"].sum())
     rhat_max = float(summary["r_hat"].max())
+    ess_min = float(summary["ess_bulk"].min())
     logger.info(
-        "Diagnostics: max R-hat %.3f, divergences %d", rhat_max, divergences
+        "Diagnostics: max R-hat %.3f, min bulk ESS %.0f, divergences %d",
+        rhat_max, ess_min, divergences,
     )
     if rhat_max >= 1.05 or divergences > 0:
         logger.warning(

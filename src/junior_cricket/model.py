@@ -16,16 +16,27 @@ Re-casts the MARCEL baseball projection framework (PyMC Labs,
   the binary rates (replacing MARCEL's peak-age curve).
 
 All rates are per ball faced (batting) or per delivery (bowling).
+
+Two model builders live here. ``build_marcel_model`` is the original
+specification. Fitted to real U10 data it did not sample (every draw
+diverged), and its recency weights only ever appear in deterministic
+projections, so no likelihood ever informs them. ``build_marcel_model_v2``
+replaces it: a non-centred local-level model in which each player's
+rate on the logit (or log) scale carries over from period to period
+with a learned drift, so recency weighting emerges from the data
+instead of being fixed. It exposes the same variable names the
+optimiser reads.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import pymc as pm
+import pytensor.tensor as pt
 
 # Weakly informative population priors based on typical BNJCA
 # junior cricket rates per ball. The data dominate these quickly.
@@ -367,6 +378,211 @@ def build_marcel_model(data: ModelData) -> pm.Model:
             )
             pm.Deterministic(
                 "p_wicket_final", p_wicket_proj, dims="player"
+            )
+
+    return model
+
+
+# Working-scale priors for the v2 hierarchy: (mean, between-player SD of
+# skill, period-to-period drift SD). Binary rates live on the logit
+# scale, Poisson rates on the log scale.
+_BINARY_PRIORS = (0.7, 0.5, 0.25)
+_RATE_PRIORS = (0.5, 0.4, 0.2)
+
+
+def _logit(p: float) -> float:
+    """Logit of a probability."""
+    return float(np.log(p / (1.0 - p)))
+
+
+def _observed_cells(
+    trials: np.ndarray, counts: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Pick the (player, period) cells that have at least one trial.
+
+    Args:
+        trials: Exposure array shaped (player, period).
+        counts: Observed counts of the same shape.
+
+    Returns:
+        (player index, period index, trials, counts) for cells with
+        exposure. Empty cells carry no information and are left out
+        of the likelihood, so an empty period cannot break sampling.
+    """
+    players, periods = np.nonzero(trials > 0)
+    return (
+        players,
+        periods,
+        trials[players, periods],
+        np.rint(counts[players, periods]).astype(int),
+    )
+
+
+def _local_level(
+    name: str,
+    centre: float,
+    n_periods: int,
+    priors: Tuple[float, float, float],
+):
+    """Non-centred local-level state for one rate family.
+
+    ``theta[i, 0] = m + s * z[i]`` and ``theta[i, t] = theta[i, t-1] +
+    tau * eps[i, t]``: a persistent player skill around a population
+    mean, drifting a little each period. Writing the offsets as
+    standard normals removes the funnel the original Beta
+    parameterisation had when the between-player spread is small.
+
+    Args:
+        name: Family name used to label the variables.
+        centre: Prior centre of the population mean (working scale).
+        n_periods: Number of periods.
+        priors: (SD of the mean, SD of skill spread, SD of drift).
+
+    Returns:
+        (theta shaped (player, period), m, s, tau, total SD of the
+        state at the last period).
+    """
+    sd_mean, sd_skill, sd_drift = priors
+    m = pm.Normal(f"m_{name}", centre, sd_mean)
+    s = pm.HalfNormal(f"s_{name}", sd_skill)
+    tau = pm.HalfNormal(f"tau_{name}", sd_drift)
+    z = pm.Normal(f"z_{name}", 0.0, 1.0, dims="player")
+    start = (m + s * z)[:, None]
+    if n_periods > 1:
+        eps = pm.Normal(f"eps_{name}", 0.0, 1.0, dims=("player", "step"))
+        state = pt.concatenate(
+            [start, start + tau * pt.cumsum(eps, axis=1)], axis=1
+        )
+    else:
+        state = start
+    theta = pm.Deterministic(
+        f"theta_{name}", state, dims=("player", "period")
+    )
+    total_sd = pt.sqrt(s**2 + (n_periods - 1) * tau**2)
+    return theta, m, s, tau, total_sd
+
+
+def build_marcel_model_v2(data: ModelData) -> pm.Model:
+    """Build the non-centred local-level model.
+
+    Each family (dismissal hazard, boundary rate, wicket rate, scoring
+    rate, economy) gets a population mean, a between-player spread of
+    persistent skill and a per-period drift; latent rates are then the
+    inverse logit (or exponential) of the resulting state. The
+    projected rate for the next period is the last period's state.
+    Extras are modelled only when the data record any: PlayHQ U10
+    scoring records none, and forcing a rate of zero would wrongly
+    switch wides off in the U11 simulation, so the population prior
+    is used instead.
+
+    Args:
+        data: Dense observed arrays from ``prepare_model_data``.
+
+    Returns:
+        A ``pm.Model`` exposing ``p_out_final``, ``p_bound_final``,
+        ``p_wicket_final``, ``srr_proj``, ``econ_proj``, ``p_extra_proj``
+        (per player) and natural-scale ``mu_*`` / ``sigma_*`` population
+        summaries, the names the optimiser reads.
+    """
+    n_players = len(data.player_names)
+    n_periods = len(data.period_labels)
+    coords = {
+        "player": data.player_names,
+        "period": data.period_labels,
+        "step": data.period_labels[1:],
+    }
+
+    with pm.Model(coords=coords) as model:
+        # --- Binary per-ball rates ---
+        binary = {}
+        for name, prior_mu, trials, counts in (
+            ("out", PRIOR_MU_OUT, data.balls_faced, data.outs),
+            ("bound", PRIOR_MU_BOUND, data.balls_faced, data.boundaries),
+            ("wicket", PRIOR_MU_WICKET, data.fair_balls, data.wickets),
+        ):
+            theta, m, s, tau, total_sd = _local_level(
+                name, _logit(prior_mu), n_periods, _BINARY_PRIORS
+            )
+            rate = pm.Deterministic(
+                f"p_{name}", pm.math.invlogit(theta), dims=("player", "period")
+            )
+            i, t, n, y = _observed_cells(trials, counts)
+            pm.Binomial(f"{name}_obs", n=n.astype(int), p=rate[i, t], observed=y)
+            mu = pm.math.invlogit(m)
+            pm.Deterministic(f"mu_{name}", mu)
+            pm.Deterministic(f"sigma_{name}", mu * (1.0 - mu) * total_sd)
+            binary[name] = theta
+
+        # --- Poisson rates: non-boundary scoring rate and economy ---
+        rates = {}
+        for name, prior_mu, trials, counts in (
+            ("srr", PRIOR_MU_SRR, data.non_boundary_balls,
+             data.non_boundary_runs),
+            ("econ", PRIOR_MU_ECON, data.fair_balls, data.runs_off_bat),
+        ):
+            theta, m, s, tau, total_sd = _local_level(
+                name, float(np.log(prior_mu)), n_periods, _RATE_PRIORS
+            )
+            rate = pm.Deterministic(
+                name, pt.exp(theta), dims=("player", "period")
+            )
+            i, t, n, y = _observed_cells(trials, counts)
+            pm.Poisson(f"{name}_obs", mu=rate[i, t] * n, observed=y)
+            mean = pt.exp(m + 0.5 * total_sd**2)
+            pm.Deterministic(f"mu_{name}", mean)
+            pm.Deterministic(
+                f"sigma_{name}", mean * pt.sqrt(pt.exp(total_sd**2) - 1.0)
+            )
+            rates[name] = theta
+
+        # --- Extras: modelled only if the data record any ---
+        if data.extras.sum() > 0:
+            theta, m, s, tau, total_sd = _local_level(
+                "extra", _logit(PRIOR_MU_EXTRA), n_periods, _BINARY_PRIORS
+            )
+            rate = pm.Deterministic(
+                "p_extra", pm.math.invlogit(theta), dims=("player", "period")
+            )
+            i, t, n, y = _observed_cells(data.deliveries, data.extras)
+            pm.Binomial("extra_obs", n=n.astype(int), p=rate[i, t], observed=y)
+            mu = pm.math.invlogit(m)
+            pm.Deterministic("mu_extra", mu)
+            pm.Deterministic("sigma_extra", mu * (1.0 - mu) * total_sd)
+            pm.Deterministic(
+                "p_extra_proj", rate[:, -1], dims="player"
+            )
+        else:
+            pm.Deterministic("mu_extra", pt.as_tensor_variable(PRIOR_MU_EXTRA))
+            pm.Deterministic("sigma_extra", pt.as_tensor_variable(0.06))
+            pm.Deterministic(
+                "p_extra_proj",
+                pt.ones(n_players) * PRIOR_MU_EXTRA,
+                dims="player",
+            )
+
+        # --- Projections for the next period (last state) ---
+        pm.Deterministic(
+            "srr_proj", pt.exp(rates["srr"][:, -1]), dims="player"
+        )
+        pm.Deterministic(
+            "econ_proj", pt.exp(rates["econ"][:, -1]), dims="player"
+        )
+
+        # --- Optional relative-age effect on the binary rates ---
+        age_std = None
+        if data.ages_months is not None:
+            age_std = pm.Data(
+                "age_std",
+                (data.ages_months - np.mean(data.ages_months)) / 12.0,
+                dims="player",
+            )
+        for name in ("out", "bound", "wicket"):
+            last = binary[name][:, -1]
+            if age_std is not None:
+                beta = pm.Normal(f"beta_age_{name}", 0.0, 0.5)
+                last = last + beta * age_std
+            pm.Deterministic(
+                f"p_{name}_final", pm.math.invlogit(last), dims="player"
             )
 
     return model
