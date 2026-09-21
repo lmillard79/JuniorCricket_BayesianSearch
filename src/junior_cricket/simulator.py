@@ -23,12 +23,17 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from junior_cricket.playing_conditions import PlayingConditions
+from junior_cricket.rules_u10 import U10
 from junior_cricket.rules_u11 import U11
 
 LOGGER = logging.getLogger(__name__)
 
 BOUNDARY_SIX_SHARE = 0.15
 RUN_OUT_SHARE = 0.10
+# Measured on 26 U10 innings (BNJCA 2025/26): 42 of 172 dismissals were
+# run outs, and the striker was the batter run out in 35 of those 42.
+U10_RUN_OUT_SHARE = 0.244
+RUN_OUT_STRIKER_SHARE = 0.83
 ECON_CLIP = (0.5, 2.0)
 
 
@@ -77,6 +82,7 @@ class BatterCard:
     out: bool = False
     retired: bool = False
     resumed: bool = False
+    dismissals: int = 0
 
 
 @dataclass
@@ -300,6 +306,39 @@ def _bowler_multiplier(econ: float, population_econ: float) -> float:
     return float(np.clip(econ / population_econ, *ECON_CLIP))
 
 
+def _ball_runs(
+    striker: PlayerSkills,
+    bowler: PlayerSkills,
+    population_econ: float,
+    rng: np.random.Generator,
+) -> Tuple[int, bool]:
+    """Draw the runs off the bat for one ball that is not a dismissal.
+
+    Args:
+        striker: Batter on strike.
+        bowler: Bowler delivering.
+        population_econ: Grade mean economy for the bowler multiplier.
+        rng: NumPy random generator.
+
+    Returns:
+        (runs, whether the ball was a boundary).
+    """
+    multiplier = _bowler_multiplier(bowler.econ, population_econ)
+    if rng.random() < striker.p_bound * multiplier:
+        # Boundary: four, or six with a small share.
+        is_six = rng.random() < BOUNDARY_SIX_SHARE
+        return (6 if is_six else 4), True
+    # Non-boundary runs calibrated to the scoring rate.
+    single_prob = min(striker.srr * multiplier * 0.9, 0.9)
+    two_prob = min(striker.srr * multiplier * 0.08, 0.08)
+    run_roll = rng.random()
+    if run_roll < single_prob:
+        return 1, False
+    if run_roll < single_prob + two_prob:
+        return 2, False
+    return 0, False
+
+
 def simulate_innings(
     batting_skills: Sequence[PlayerSkills],
     bowling_skills: Dict[str, PlayerSkills],
@@ -459,38 +498,33 @@ def simulate_innings(
             )
             if rng.random() < p_dismissal:
                 wickets += 1
-                card.out = True
-                bowler_card.wickets += 1
+                # A run out can dismiss either batter and no bowler is
+                # credited with it. Mark the batter who is actually out;
+                # marking the striker regardless left a "dismissed"
+                # striker batting on and exempt from retirement.
+                run_out = rng.random() < RUN_OUT_SHARE
+                striker_out = (not run_out) or (
+                    rng.random() < RUN_OUT_STRIKER_SHARE
+                )
+                cards[(striker if striker_out else non_striker).name].out = True
+                if not run_out:
+                    bowler_card.wickets += 1
                 if wickets >= conditions.wickets_all_out:
                     break
                 replacement = _next_available()
                 if replacement is None:
                     break
-                # Surviving batter faces the next ball; the new
-                # batter takes the vacant end (rules 16.10 iv-v
-                # convention carried into the U11 format).
-                if rng.random() < RUN_OUT_SHARE:
-                    non_striker = replacement
-                else:
+                if striker_out:
+                    # The surviving batter faces the next ball and the
+                    # new batter takes the vacant end.
                     striker, non_striker = non_striker, replacement
+                else:
+                    non_striker = replacement
                 continue
 
-            multiplier = _bowler_multiplier(bowler.econ, population_econ)
-            bound_prob = striker.p_bound * multiplier
-            if rng.random() < bound_prob:
-                # Boundary: four, or six with a small share.
-                is_six = rng.random() < BOUNDARY_SIX_SHARE
-                card.boundaries += 1
-                card.runs += 6 if is_six else 4
-            else:
-                # Non-boundary runs calibrated to the scoring rate.
-                single_prob = min(striker.srr * multiplier * 0.9, 0.9)
-                two_prob = min(striker.srr * multiplier * 0.08, 0.08)
-                run_roll = rng.random()
-                if run_roll < single_prob:
-                    card.runs += 1
-                elif run_roll < single_prob + two_prob:
-                    card.runs += 2
+            runs, boundary = _ball_runs(striker, bowler, population_econ, rng)
+            card.runs += runs
+            card.boundaries += int(boundary)
 
             if _try_retire(striker):
                 replacement = _next_available()
@@ -524,3 +558,171 @@ def simulate_innings(
         bowler_cards=list(bowler_cards.values()),
         all_out=wickets >= conditions.wickets_all_out,
     )
+
+
+def simulate_innings_u10(
+    batting_skills: Sequence[PlayerSkills],
+    bowling_skills: Dict[str, PlayerSkills],
+    bowling_rotation: Sequence[str],
+    bowling_allocation: Dict[str, int],
+    rng: np.random.Generator,
+    conditions: PlayingConditions = U10,
+    population_econ: float = 0.55,
+    n_overs: Optional[int] = None,
+    run_out_share: float = U10_RUN_OUT_SHARE,
+) -> InningsResult:
+    """Simulate one U10 innings ball by ball (BNJCA Rule 16).
+
+    Every batter faces a fixed allotment of balls, in batting order,
+    then retires (16.10(i)). A dismissed batter carries on (16.10(iii))
+    and the striker changes ends unless the non-striker was the batter
+    run out (16.10(iv)-(v)). Each delivery is one of the six balls of
+    its over: wides and no balls are not re-bowled and score one run
+    to the striker (16.8(iii), 16.10(vii)). Batters otherwise swap ends
+    only at the end of an over (16.6(iv)). The bowler is credited with
+    every dismissal except a run out (16.8(v)-(vi)).
+
+    The 4-run penalty per dismissal belongs to the opposition's total,
+    so it is not added here; see ``team_total``.
+
+    Args:
+        batting_skills: Batting team in batting order.
+        bowling_skills: Fielding team's players by name.
+        bowling_rotation: Fielding team's round-robin order.
+        bowling_allocation: Fielding team's player -> overs.
+        rng: NumPy random generator.
+        conditions: Playing conditions (U10 by default).
+        population_econ: Grade mean economy for bowler multipliers.
+        n_overs: Overs to bowl if the game is shortened; defaults to
+            the full innings.
+        run_out_share: Share of dismissals that are run outs.
+
+    Returns:
+        The completed innings; ``runs`` is runs scored by the batting
+        team (sundries included) and ``wickets`` counts dismissals.
+
+    Raises:
+        NotImplementedError: For formats where dismissed batters leave.
+        ValueError: On a team size or bowling configuration the rules
+            do not allow.
+    """
+    if not conditions.dismissed_batter_continues:
+        raise NotImplementedError(
+            "simulate_innings_u10 models the U10 format only"
+        )
+    size = len(batting_skills)
+    if size not in conditions.batting_ball_allotments:
+        raise ValueError(f"No batting allotment for a team of {size}")
+    fielding_size = len(bowling_skills)
+    if sorted(bowling_allocation.values(), reverse=True) != sorted(
+        conditions.bowling_allocations.get(fielding_size, []), reverse=True
+    ):
+        raise ValueError(
+            f"Bowling allocation {sorted(bowling_allocation.values(), reverse=True)} "
+            f"does not match the rules for a team of {fielding_size}"
+        )
+    if set(bowling_allocation) != set(bowling_skills):
+        raise ValueError("Bowling allocation keys must match the fielding players")
+    if sorted(bowling_rotation) != sorted(bowling_skills):
+        raise ValueError("Bowling rotation must contain exactly the fielding players")
+
+    allotments = conditions.batting_ball_allotments[size]
+    over_sequence = generate_over_sequence(
+        bowling_rotation, bowling_allocation, conditions.overs_per_innings
+    )
+    overs = conditions.overs_per_innings if n_overs is None else min(
+        n_overs, conditions.overs_per_innings
+    )
+    cards = {p.name: BatterCard(name=p.name) for p in batting_skills}
+    bowler_cards = {name: BowlerCard(name=name) for name in bowling_allocation}
+    crease = [0, 1]                      # batting-order index: [striker, non-striker]
+    next_batter = 2
+    wickets = 0
+    extras_runs = 0
+    balls_bowled = 0
+
+    def _retire_finished() -> None:
+        """Replace any batter at the crease who has used their balls."""
+        nonlocal next_batter
+        for position in (0, 1):
+            index = crease[position]
+            if cards[batting_skills[index].name].balls < allotments[index]:
+                continue
+            cards[batting_skills[index].name].retired = True
+            if next_batter < size:
+                crease[position] = next_batter
+                next_batter += 1
+            else:
+                # Nobody left to come in: the other batter faces the rest.
+                crease[position] = crease[1 - position]
+
+    for over in range(overs):
+        bowler = bowling_skills[over_sequence[over]]
+        bowler_card = bowler_cards[bowler.name]
+        for _ in range(conditions.fair_balls_per_over):
+            striker = batting_skills[crease[0]]
+            card = cards[striker.name]
+            card.balls += 1
+            bowler_card.balls += 1
+            bowler_card.deliveries += 1
+            balls_bowled += 1
+
+            if rng.random() < bowler.p_extra:
+                # Wide or no ball: one run to the striker, ball consumed.
+                card.runs += 1
+                extras_runs += 1
+                bowler_card.extras += 1
+                bowler_card.runs += 1
+            elif rng.random() < _combined_dismissal(
+                striker.p_out, bowler.p_wicket
+            ):
+                wickets += 1
+                card.dismissals += 1
+                run_out = rng.random() < run_out_share
+                striker_out = (not run_out) or (
+                    rng.random() < RUN_OUT_STRIKER_SHARE
+                )
+                if not run_out:
+                    bowler_card.wickets += 1
+                if striker_out:
+                    # The not-out batter faces the next ball.
+                    crease[0], crease[1] = crease[1], crease[0]
+                # A run-out non-striker stays at the crease; striker faces on.
+            else:
+                runs, boundary = _ball_runs(striker, bowler, population_econ, rng)
+                card.runs += runs
+                card.boundaries += int(boundary)
+                bowler_card.runs += runs
+            _retire_finished()
+        crease[0], crease[1] = crease[1], crease[0]      # end of over
+
+    return InningsResult(
+        runs=sum(c.runs for c in cards.values()),
+        wickets=wickets,
+        overs_completed=overs,
+        fair_balls=balls_bowled,
+        extras=extras_runs,
+        batter_cards=list(cards.values()),
+        bowler_cards=list(bowler_cards.values()),
+        all_out=False,
+    )
+
+
+def team_total(
+    own: InningsResult, opposition: InningsResult, penalty_runs: int = 4
+) -> int:
+    """A U10 team's final total, with penalty runs for wickets it took.
+
+    Rule 16.10(vi): the batting side incurs 4 runs for each dismissal,
+    added to the opposition's total at the end of its innings.
+
+    Args:
+        own: The team's own batting innings.
+        opposition: The opposition's batting innings (the wickets our
+            bowlers took).
+        penalty_runs: Runs per dismissal.
+
+    Returns:
+        Own runs plus the penalty for every opposition dismissal.
+    """
+    return own.runs + penalty_runs * opposition.wickets
