@@ -17,6 +17,8 @@ Example:
 from __future__ import annotations
 
 import argparse
+import csv
+import re
 from pathlib import Path
 
 import arviz as az
@@ -44,17 +46,42 @@ def _interval(x: np.ndarray) -> str:
     return f"{np.median(x):.2f} [{np.percentile(x, 5):.2f}, {np.percentile(x, 95):.2f}]"
 
 
+def _our_names_if_not_aliased(player_map: Path) -> "list[str] | None":
+    """Real names to pass as ``our_names``, or None for the P0x/O0x convention.
+
+    A "named" data-dir (built for a coach to check against what they watched)
+    uses real names as the alias itself, so load_balls's P/O prefix check
+    cannot tell who is "ours"; detected here by an alias that is not P<digits>.
+    """
+    if not player_map.exists():
+        return None
+    with player_map.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    if all(re.fullmatch(r"P\d+", r["alias"]) for r in rows):
+        return None
+    return [r["alias"] for r in rows]
+
+
 def main() -> None:
     """Fit, diagnose and write the summary."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--balls", default=str(REPO_ROOT / "data" / "processed" / "playhq_balls.csv"))
+    parser.add_argument("--balls", default=None,
+                        help="Default: data/<data-dir>/processed/playhq_balls.csv")
     parser.add_argument("--draws", type=int, default=1000)
     parser.add_argument("--tune", type=int, default=1000)
+    parser.add_argument("--data-dir", default=None,
+                        help="Use data/<name>/ instead of data/ (a second team)")
     args = parser.parse_args()
+
+    global OUTPUT_DIR
+    base = REPO_ROOT / "data" / args.data_dir if args.data_dir else REPO_ROOT / "data"
+    OUTPUT_DIR = base / "outputs"
+    balls_path = Path(args.balls) if args.balls else base / "processed" / "playhq_balls.csv"
 
     logger = setup_logging(LOGGER_NAME, OUTPUT_DIR)
     logger.info("Input arguments: %s", vars(args))
-    data, _ = load_balls(Path(args.balls))
+    our_names = _our_names_if_not_aliased(base / "raw" / "playhq" / "player_map.csv")
+    data, _ = load_balls(balls_path, our_names=our_names)
     logger.info("%d deliveries, %d players, %d games", len(data.bat),
                 len(data.players), len(data.games))
     idata = fit_ball_model(data, draws=args.draws, tune=args.tune, seed=20260921)

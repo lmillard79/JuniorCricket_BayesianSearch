@@ -36,15 +36,26 @@ def main() -> None:
     """Write the profile report."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--squad", required=True, help="Comma-separated aliases")
-    parser.add_argument("--ball-posterior", default=str(OUTPUT_DIR / "ball_posterior.nc"))
+    parser.add_argument("--ball-posterior", default=None,
+                        help="Default: data/<data-dir>/outputs/ball_posterior.nc")
     parser.add_argument("--named", action="store_true",
                         help="Also write a copy with real names (private file)")
+    parser.add_argument("--data-dir", default=None,
+                        help="Use data/<name>/ instead of data/ (a second team)")
     args = parser.parse_args()
+
+    global OUTPUT_DIR, RAW_DIR, PROCESSED_DIR
+    base = REPO_ROOT / "data" / args.data_dir if args.data_dir else REPO_ROOT / "data"
+    OUTPUT_DIR = base / "outputs"
+    RAW_DIR = base / "raw" / "playhq"
+    PROCESSED_DIR = base / "processed"
+    ball_posterior = args.ball_posterior or str(OUTPUT_DIR / "ball_posterior.nc")
+
     logger = setup_logging(LOGGER_NAME, OUTPUT_DIR)
     logger.info("Input arguments: %s", vars(args))
 
     squad = [s.strip() for s in args.squad.split(",") if s.strip()]
-    profiles = player_profiles(az.from_netcdf(args.ball_posterior), squad)
+    profiles = player_profiles(az.from_netcdf(ball_posterior), squad)
     batting = pd.read_csv(PROCESSED_DIR / "playhq_batting.csv")
     bowling = pd.read_csv(PROCESSED_DIR / "playhq_bowling.csv")
     balls = batting.groupby("player_name")["balls_faced"].sum()

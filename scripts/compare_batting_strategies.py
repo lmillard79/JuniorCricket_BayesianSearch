@@ -245,7 +245,8 @@ def _b64(path: Path) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--ball-posterior", default=str(OUTPUT_DIR / "ball_posterior.nc"))
+    parser.add_argument("--ball-posterior", default=None,
+                        help="Default: data/<data-dir>/outputs/ball_posterior.nc")
     parser.add_argument("--squad", default=DEFAULT_SQUAD, help="Comma-separated batter aliases")
     parser.add_argument("--worlds", type=int, default=6000, help="Worlds for the main scenario")
     parser.add_argument("--grid-worlds", type=int, default=3000, help="Worlds per grid scenario")
@@ -255,8 +256,16 @@ def main() -> None:
     parser.add_argument("--pool", type=int, default=300)
     parser.add_argument("--workers", type=int, default=R.default_workers())
     parser.add_argument("--seed", type=int, default=11)
-    parser.add_argument("--out", default=str(OUTPUT_DIR / "strategies"))
+    parser.add_argument("--out", default=None, help="Default: data/<data-dir>/outputs/strategies")
+    parser.add_argument("--data-dir", default=None,
+                        help="Use data/<name>/ instead of data/ (a second team)")
     args = parser.parse_args()
+
+    global OUTPUT_DIR
+    OUTPUT_DIR = (REPO_ROOT / "data" / args.data_dir / "outputs" if args.data_dir
+                  else REPO_ROOT / "data" / "outputs")
+    args.ball_posterior = args.ball_posterior or str(OUTPUT_DIR / "ball_posterior.nc")
+    args.out = args.out or str(OUTPUT_DIR / "strategies")
 
     import arviz as az
 

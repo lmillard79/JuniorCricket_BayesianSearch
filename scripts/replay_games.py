@@ -352,8 +352,10 @@ h1{margin-bottom:4px}h2{margin-top:32px;border-bottom:2px solid #6baed6;padding-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--team-id", action="append", required=True)
-    parser.add_argument("--ball-posterior", default=str(OUTPUT_DIR / "ball_posterior.nc"))
-    parser.add_argument("--balls", default=str(REPO_ROOT / "data" / "processed" / "playhq_balls.csv"))
+    parser.add_argument("--ball-posterior", default=None,
+                        help="Default: data/<data-dir>/outputs/ball_posterior.nc")
+    parser.add_argument("--balls", default=None,
+                        help="Default: data/<data-dir>/processed/playhq_balls.csv")
     parser.add_argument("--sims", type=int, default=4000, help="Replays of each game as played")
     parser.add_argument("--pool", type=int, default=300, help="Posterior draws to sample skills from")
     parser.add_argument("--random", type=int, default=40, help="Random alternatives per decision")
@@ -361,8 +363,17 @@ def main() -> None:
     parser.add_argument("--confirm", type=int, default=10000, help="Fresh replays per finalist")
     parser.add_argument("--workers", type=int, default=R.default_workers())
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--out", default=str(OUTPUT_DIR / "replay"))
+    parser.add_argument("--out", default=None, help="Default: data/<data-dir>/outputs/replay")
+    parser.add_argument("--data-dir", default=None,
+                        help="Use data/<name>/ instead of data/ (a second team)")
     args = parser.parse_args()
+
+    global RAW_DIR, OUTPUT_DIR
+    base = REPO_ROOT / "data" / args.data_dir if args.data_dir else REPO_ROOT / "data"
+    RAW_DIR, OUTPUT_DIR = base / "raw" / "playhq", base / "outputs"
+    args.ball_posterior = args.ball_posterior or str(OUTPUT_DIR / "ball_posterior.nc")
+    args.balls = args.balls or str(base / "processed" / "playhq_balls.csv")
+    args.out = args.out or str(OUTPUT_DIR / "replay")
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)

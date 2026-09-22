@@ -111,6 +111,24 @@ Drop it (and set `--max-games 3`) to fetch, slowly.
   and `opposition_map.csv`. `player_report.py --named` and `name_report.py`
   write private named copies under `data/outputs/` (gitignored). Never commit
   those; stage files explicitly, never `git add -A`.
+* **A second team runs the whole pipeline with `--data-dir <name>`**
+  (`fetch_scorecards.py`, `fit_ball_model.py`, `check_u10_totals.py`,
+  `player_report.py`, `replay_games.py`, `compare_batting_strategies.py`,
+  `name_report.py`), keeping its raw cache, alias numbering, processed CSVs
+  and outputs under `data/<name>/` instead of `data/`, fully separate so
+  it cannot overwrite the default team's (`.gitignore` covers `data/*/{raw,
+  processed,outputs}/` generically). Built 22 Sep 2026 for VDCC Navy
+  (U10 Ponting grade, a different grade to White's, teams `7b1eba2e`
+  pre-Christmas and `e3fff983` post; see the Navy note in
+  playhq-access-notes.md). A *named* variant (real names used as the alias
+  itself, so charts render with names, not just tables) is also possible:
+  copy the raw cache to a new data-dir, rewrite that copy's `player_map.csv`/
+  `opposition_map.csv` so `alias == name` (checking for real name collisions
+  first), then run the pipeline `--offline` against it. `load_balls` needs
+  `our_names` explicitly for this (real names have no P/O prefix to read
+  "who's ours" from); `fit_ball_model.py` detects a non-P0x alias map and
+  passes it automatically. Never commit or share a named variant's outputs
+  beyond the family who asked for it.
 * **Tenant headers differ by service.** `api.playhq.com` needs
   `tenant: cricket-australia` (with `ca` scores come back empty); the
   spectator service needs `x-phq-tenant: ca`.

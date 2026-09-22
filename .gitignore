@@ -221,6 +221,10 @@ __marimo__/
 data/raw/
 data/processed/
 data/outputs/
+# A second (or third) team's data, run with --data-dir <name>: data/<name>/{raw,processed,outputs}/
+data/*/raw/
+data/*/processed/
+data/*/outputs/
 log/
 *.nc
 

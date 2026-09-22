@@ -24,9 +24,13 @@ def main() -> None:
     """Translate one report."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("report", help="Path to a report that uses aliases")
+    parser.add_argument("--data-dir", default=None,
+                        help="Use data/<name>/ instead of data/ for the alias maps "
+                             "(a second team)")
     args = parser.parse_args()
     source = Path(args.report)
-    names = alias_names(RAW_DIR / "player_map.csv", RAW_DIR / "opposition_map.csv")
+    raw_dir = (REPO_ROOT / "data" / args.data_dir / "raw" / "playhq") if args.data_dir else RAW_DIR
+    names = alias_names(raw_dir / "player_map.csv", raw_dir / "opposition_map.csv")
     target = source.with_name(f"{source.stem}_named{source.suffix}")
     target.write_text(translate_aliases(source.read_text(encoding="utf-8"), names),
                       encoding="utf-8")

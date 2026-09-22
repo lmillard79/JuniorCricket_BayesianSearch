@@ -84,7 +84,16 @@ def main() -> None:
                         help="Minimum seconds between requests")
     parser.add_argument("--max-games", type=int, default=None,
                         help="Fetch at most this many games this run")
+    parser.add_argument("--data-dir", default=None,
+                        help="Use data/<name>/ instead of data/ (a second team, kept "
+                             "fully separate: its own raw cache, alias numbering and "
+                             "processed CSVs, so it cannot overwrite the default team's)")
     args = parser.parse_args()
+
+    global RAW_DIR, PROCESSED_DIR
+    if args.data_dir:
+        base = REPO_ROOT / "data" / args.data_dir
+        RAW_DIR, PROCESSED_DIR = base / "raw" / "playhq", base / "processed"
 
     logger = setup_logging(LOGGER_NAME, PROCESSED_DIR)
     logger.info("Input arguments: %s", vars(args))

@@ -112,18 +112,28 @@ class BallData:
 OUR_ALIAS_PREFIX = "P"   # our own players; the opposition's aliases start with O
 
 
-def load_balls(path: Path) -> Tuple[BallData, pd.DataFrame]:
+def load_balls(
+    path: Path, our_names: Optional[Sequence[str]] = None,
+) -> Tuple[BallData, pd.DataFrame]:
     """Read ``playhq_balls.csv`` into integer-coded arrays.
 
     Args:
         path: CSV written by ``fetch_scorecards.py``.
+        our_names: Exactly who "ours" is, for the fielding effect
+            (``ours_fielding``). Defaults to the ``P0x``/``O0x`` alias
+            convention (every batter/bowler string is required to start
+            with one of those two letters); pass the real roster instead
+            when the CSV uses real names rather than aliases (a "named"
+            data-dir built for a coach to sanity-check against what they
+            watched), since names carry no such prefix to lean on.
 
     Returns:
         (coded data, the raw frame with its ``date`` column parsed).
 
     Raises:
-        ValueError: If a bowler alias is neither ours nor the
-            opposition's, so ``ours_fielding`` would be silently wrong.
+        ValueError: If ``our_names`` is None and a bowler string is
+            neither ours nor the opposition's by the alias convention,
+            so ``ours_fielding`` would otherwise be silently wrong.
     """
     frame = pd.read_csv(path, parse_dates=["date"], dtype={"fielder": str})
     frame["fielder"] = frame["fielder"].fillna("")
@@ -131,10 +141,14 @@ def load_balls(path: Path) -> Tuple[BallData, pd.DataFrame]:
     games = list(dict.fromkeys(frame["game_id"]))
     index = {p: i for i, p in enumerate(players)}
     gindex = {g: i for i, g in enumerate(games)}
-    bowler_prefix = frame["bowler"].str[0]
-    stray = sorted(set(frame.loc[~bowler_prefix.isin(["P", "O"]), "bowler"]))
-    if stray:
-        raise ValueError(f"Bowler aliases outside the P/O convention: {stray}")
+    if our_names is not None:
+        ours_mask = frame["bowler"].isin(set(our_names))
+    else:
+        bowler_prefix = frame["bowler"].str[0]
+        stray = sorted(set(frame.loc[~bowler_prefix.isin(["P", "O"]), "bowler"]))
+        if stray:
+            raise ValueError(f"Bowler aliases outside the P/O convention: {stray}")
+        ours_mask = bowler_prefix == OUR_ALIAS_PREFIX
     data = BallData(
         players=players,
         games=games,
@@ -144,7 +158,7 @@ def load_balls(path: Path) -> Tuple[BallData, pd.DataFrame]:
         runs=frame["runs"].to_numpy(),
         dismissed=frame["dismissed"].to_numpy(),
         boundary=frame["boundary"].to_numpy(),
-        ours_fielding=(bowler_prefix == OUR_ALIAS_PREFIX).to_numpy().astype(np.int8),
+        ours_fielding=ours_mask.to_numpy().astype(np.int8),
     )
     return data, frame
 

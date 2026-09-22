@@ -269,21 +269,55 @@ provide; blocked on the coach supplying it.
 * **Skill transfer** U10 to U11 is an assumption. Only 10 players and 15 games.
 * The check is in-sample; the backtests are the out-of-sample evidence.
 
+## A second team: VDCC Navy
+
+Built 22 Sep 2026 at the user's request, for a friend (a Navy parent) to check
+the model against what he actually watched. Navy is U10, grade "Ponting"
+(pre-Christmas, team `7b1eba2e`) then "Chappell (Post)" (post-Christmas,
+`e3fff983`) — confirmed a different grade to White's ("Walters"/"Kasprowicz
+Post") both halves, so this is a standalone analysis, not pooled into White's
+opposition prior (see the "does more data help" note above and the Navy entry
+in the playhq-access-notes memory).
+
+The whole pipeline now takes `--data-dir <name>`, keeping a second (or third)
+team's raw cache, alias numbering, processed CSVs and outputs under
+`data/<name>/` rather than `data/`, so nothing about White's own data is at
+risk (see STATE.md). Fetched 12 of 14 Navy games (2 not electronically scored);
+their ball-by-ball reconciles with the scorecard noticeably less cleanly than
+White's (many more "balls faced differ"/"event title not understood" notes),
+which shows up as both sides' wicket-taking being under-predicted in the
+totals check (0.78x each), not just ours as with White. Fitted, replayed and
+reported the same way as White throughout.
+
+For the friend specifically, a fully named variant also exists: real names
+used as the alias itself (not a find-and-replace after the fact, which cannot
+reach names baked into the chart images), built by copying the raw cache into
+`data/navy_named/`, rewriting its alias maps so `alias == name`, and running
+the pipeline `--offline` against that copy. Never committed; never shared
+beyond the family who asked for it.
+
+Two small, real bugs surfaced and were fixed while doing this: `check_u10_totals.py`
+required the older, unrelated per-player posterior even when unused whenever
+`--ball-posterior` was given (two separate eager-evaluation spots); `load_balls`
+could not identify "our" bowlers once real names replaced the P0x/O0x
+convention, needing an explicit `our_names` argument (now auto-detected by
+`fit_ball_model.py` from the alias map's shape).
+
 ## Next steps (in order)
 
-1. Add the team fielding effect (design above) to the joint model; refit; re-run
-   the totals check, the replays and the strategy comparison (numbers above will
-   move).
-2. Wire wicketkeeper flags into the pipeline, if the coach can supply who kept
+1. Wire wicketkeeper flags into the pipeline, if the coach can supply who kept
    each game.
-3. Consider a fairness-weighted variant of bank-and-recall that protects the
+2. Consider a fairness-weighted variant of bank-and-recall that protects the
    weakest batters' balls specifically, if the current runs-maximising version
    (see above) is not what is wanted.
-4. Fetch the two missing games and 2024/25 (API key, or slowly later).
-5. When BNJCA publishes the 2026/27 U11 draw (Round 1 Sat 10 Oct 2026), get
+3. Fetch the two missing White games and 2024/25 (API key, or slowly later).
+4. When BNJCA publishes the 2026/27 U11 draw (Round 1 Sat 10 Oct 2026), get
    the grade ID, fetch, fit, and rerun the strategy comparison and optimiser for
    the real squad. First U11 games give the first direct test of the transfer
    assumption (balls faced by batting position, boundary rate).
+5. If the Navy friend (or Nick) wants to keep using this, decide whether to
+   build the U11 batting-strategy comparison for Navy too, once useful data
+   exists for whichever grade they end up in.
 
 ## Key decisions log
 

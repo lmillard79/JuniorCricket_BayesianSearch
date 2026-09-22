@@ -113,6 +113,9 @@ def simulate_game(
     """Simulate one game ``n_sims`` times; return arrays per quantity."""
     out = {q: np.empty(n_sims) for q in QUANTITIES}
     tiers = sorted(U10.bowling_allocations.get(n_opp_bowl, []), reverse=True)
+    # Unused once outcomes (the joint model) drives the ball, but still read as
+    # a plain float there since priors is None whenever outcomes is given.
+    population_econ = priors.mu_econ if priors is not None else 0.55
     for k in range(n_sims):
         if outcomes is not None:
             outcomes.begin_game(rng)
@@ -139,13 +142,13 @@ def simulate_game(
             outcomes.set_fielding_ours(False)         # opposition bowls this innings
         ours_inn = simulate_innings_u10(
             ours["bat"], opp_bowl, rotation, allocation, rng,
-            population_econ=priors.mu_econ, outcomes=outcomes,
+            population_econ=population_econ, outcomes=outcomes,
             enforce_bowling_table=False)
         if outcomes is not None:
             outcomes.set_fielding_ours(True)          # we bowl this innings
         theirs_inn = simulate_innings_u10(
             opp_bat, ours["bowl"], ours["rotation"], ours["allocation"], rng,
-            population_econ=priors.mu_econ, outcomes=outcomes,
+            population_econ=population_econ, outcomes=outcomes,
             enforce_bowling_table=False)
         our_total, their_total = team_total(ours_inn, theirs_inn), team_total(theirs_inn, ours_inn)
         out["our_runs"][k], out["their_runs"][k] = ours_inn.runs, theirs_inn.runs
@@ -156,7 +159,7 @@ def simulate_game(
 
 
 def run_check(
-    posterior: str,
+    posterior: Optional[str],
     team_ids: List[str],
     sims: int,
     seed: int,
@@ -167,7 +170,10 @@ def run_check(
 
     Args:
         posterior: Per-player posterior (netcdf); supplies priors and,
-            without ``ball_posterior``, the skills.
+            without ``ball_posterior``, the skills. Not read at all when
+            ``ball_posterior`` is given: the joint model drives both the
+            skills and (population or real) the opposition, so the older
+            per-player posterior is never consulted.
         team_ids: PlayHQ team IDs whose cached fixtures to replay.
         sims: Simulations per game.
         seed: Random seed.
@@ -179,8 +185,8 @@ def run_check(
     Returns:
         (one row per game and quantity, notes on skipped games).
     """
-    idata = az.from_netcdf(posterior)
-    priors = priors_from_posterior(idata)
+    idata = az.from_netcdf(posterior) if not ball_posterior else None
+    priors = priors_from_posterior(idata) if idata is not None else None
     rng = np.random.default_rng(seed)
     aliases = key_to_alias(RAW_DIR / "player_map.csv")
     outcomes = None
@@ -264,18 +270,30 @@ def main() -> None:
     """Replay the real games and write the comparison."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--team-id", action="append", required=True)
-    parser.add_argument("--posterior", default=str(OUTPUT_DIR / "posterior_model.nc"))
+    parser.add_argument("--posterior", default=None,
+                        help="Default: data/<data-dir>/outputs/posterior_model.nc")
     parser.add_argument("--ball-posterior", default=None,
                         help="Joint-model posterior from fit_ball_model.py")
     parser.add_argument("--opposition", choices=["population", "real"],
                         default="population")
     parser.add_argument("--sims", type=int, default=400)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--data-dir", default=None,
+                        help="Use data/<name>/ instead of data/ (a second team)")
     args = parser.parse_args()
+
+    global RAW_DIR, OUTPUT_DIR
+    base = REPO_ROOT / "data" / args.data_dir if args.data_dir else REPO_ROOT / "data"
+    RAW_DIR, OUTPUT_DIR = base / "raw" / "playhq", base / "outputs"
+    # The older per-player posterior is only actually read without --ball-posterior
+    # (see run_check); do not require the file to exist otherwise.
+    posterior = args.posterior
+    if not args.ball_posterior:
+        posterior = posterior or str(OUTPUT_DIR / "posterior_model.nc")
 
     logger = setup_logging(LOGGER_NAME, OUTPUT_DIR)
     logger.info("Input arguments: %s", vars(args))
-    frame, skipped = run_check(args.posterior, args.team_id, args.sims, args.seed,
+    frame, skipped = run_check(posterior, args.team_id, args.sims, args.seed,
                                args.ball_posterior, args.opposition)
     tag = ("joint_" + args.opposition) if args.ball_posterior else "player"
     frame.to_csv(OUTPUT_DIR / f"u10_totals_check_{tag}.csv", index=False)
