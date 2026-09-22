@@ -1,6 +1,7 @@
 # STATE.md - Session Close Handoff
 
-Session: 2026-09-22, personal PC (game replays, U11 batting-strategy method)
+Session: 2026-09-22, personal PC (game replays, U11 batting-strategy method,
+bank-and-recall retirement policy)
 Earlier: 2026-09-21 (real-data bring-up, validation, joint model)
 Project: JuniorCricket_BayesianSearch (VDCC lineup optimiser)
 Durable detail and all evidence: PROJECT_STATUS.md. How to read the outputs:
@@ -9,7 +10,7 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
 ## 1. Current status
 
 * Runs end to end on the personal PC (Windows 11, Python 3.14.7, PyMC
-  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 143 passed. No C
+  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 150 passed. No C
   compiler needed: sampling uses numpyro/JAX.
 * **Game replays** (`scripts/replay_games.py`): each real U10 game is rebuilt and
   replayed thousands of times; recorded totals are placed against the replay
@@ -19,9 +20,19 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
   28-run luck spread. Over-by-over Manhattan and worm charts per game.
 * **U11 batting strategies** (`scripts/compare_batting_strategies.py`): named orders
   played through the same thousands of "worlds" of unknown opposition, tactics and
-  ground. Strongest to weakest was not beaten by anything tried, including
-  strong-weak pairings and a swap search, in 36 scenarios. Strong-weak alternating
-  costs about 7 runs; leading with the weakest about 19. Indicative: U10 skills.
+  ground. Among fixed orders, strongest to weakest was not beaten by anything tried,
+  including strong-weak pairings and a swap search, in 36 scenarios. Strong-weak
+  alternating costs about 7 runs; leading with the weakest about 19. Indicative:
+  U10 skills.
+* **Bank-and-recall retirement policy** (new this session): confirmed with the user
+  that per-batter retirement (25 to 35 balls) is allowed but unused, and that the
+  objective includes participation. Built into `simulator.py`/`strategies.py`: the
+  top 4 batters may retire not out at 25 balls; the strongest banked one is recalled
+  immediately if the next batter is out within 6 balls or for under 5 runs. Result:
+  +1.3 ± 0.2 runs against strongest to weakest, and the best alternative in all 37
+  scenarios tested (the only one that gained runs rather than lost them). Caveat: it
+  shifts a couple of balls toward the best batter and away from the weakest, so it is
+  not by itself a fairness win for the weakest batters specifically.
 * Real data: VDCC U10 White 2025/26 (teams `75cdae66`, `fafdb4c4`), 15
   completed games, ball-by-ball for 13 (3,095 deliveries), plus 87 opposition
   players.
@@ -36,15 +47,22 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
 
 1. **Team fielding effect.** White took more wickets than its individual
    bowlers explain (0.80 x), and the replays put our totals above the median
-   in most games. Add a team fielding effect (and try ball-count and position
-   effects), then re-run `check_u10_totals.py` and `replay_games.py`.
-2. **Per-batter retirement in the U11 engine.** `simulate_innings` takes one
-   retirement threshold for the whole team; the rule seems to let the coach
-   retire batters individually between 25 and 35 balls. Retiring everyone at 25
-   instead of 35 costs about 5 runs, so a per-batter policy is the next lever.
-   Confirm the rule first.
-3. **Wicketkeeper flags.** The optimiser cannot tell who keeps; the two players
-   given one over are the keepers by rule. Wire flags into the pipeline.
+   in most games. Design set (PROJECT_STATUS.md): a per-game effect on the
+   dismissal component specific to our own team's fielding, mirroring the
+   existing `game_b`/`game_s` pattern, applied only to balls our bowlers
+   bowled (known from the `P0x`/`O0x` alias convention; PlayHQ does not tag
+   fielding quality itself). Needs a refit (`fit_ball_model.py`), then
+   re-run `check_u10_totals.py`, `replay_games.py` and
+   `compare_batting_strategies.py` (their numbers will move).
+2. **Wicketkeeper flags.** `is_wicketkeeper` already exists in the player
+   registry and `PlayerSkills`, but only feeds bowling-tier allocation, not
+   dismissal modelling. PlayHQ's data does not record who kept; would need
+   the coach's own per-game record. Ask before building.
+3. **Fairness-weighted bank-and-recall.** The runs-maximising recall policy
+   just built shifts a couple of balls toward the best batter and away from
+   the weakest, so it is not by itself an answer to "everyone should get a
+   go". Build a variant that recalls to protect the weakest batters' balls,
+   if that is what is wanted, even at some cost to the +1.3 run gain.
 4. **U10 to U11 transfer.** U11 boundaries are 45 m (U10 30 to 35 m). The U10
    boundary rate will not carry over at face value; the strategy grid tests
    shifts of 0, -0.7 and -1.4 on the boundary log-odds. First U11 games are the
@@ -52,8 +70,9 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
    faced by batting position and the boundary rate with the model's.
 5. **Two games lack ball-by-ball** (`e7967782`, `67b87a4c`). A burst of
    requests earned a CloudFront 403. Do not retry soon; use an API key (the
-   user is requesting one) or re-run `fetch_scorecards.py` later (it resumes).
-   One more game (`ee765d0d`) was shortened to 18 overs and is left out of the replays.
+   user has asked PlayHQ, see the access-notes memory) or re-run
+   `fetch_scorecards.py` later (it resumes). One more game (`ee765d0d`) was
+   shortened to 18 overs and is left out of the replays.
 6. **2024/25** (season `2470e549`) as an older period; **2026/27** (season
    `077d0fa1`, Round 1 Sat 10 Oct 2026): get the U11 grade ID from the team
    page, then fetch, refit, and run `compare_batting_strategies.py --squad ...`

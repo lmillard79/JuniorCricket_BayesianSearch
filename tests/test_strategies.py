@@ -139,3 +139,23 @@ def test_a_search_finds_an_obviously_better_order() -> None:
         found, history = S.hill_climb(runner, start, SQUAD, S.Scenario(), (0, 200), 2,
                                       seed=4, rounds=3, z=2.0)
     assert found != start and history[-1][1] > history[0][1]
+
+
+def test_evaluate_one_matches_evaluate_when_nobody_is_bankable() -> None:
+    """With no bankable batters, evaluate_one is the same rule evaluate uses."""
+    with R.Runner([rule(0.3), rule(0.1)], workers=1) as runner:
+        via_evaluate = S.evaluate(runner, {"strongest to weakest": tuple(SQUAD)}, SQUAD,
+                                  S.Scenario(), (0, 30), 2, seed=6, chunks=3)["strongest to weakest"]
+        via_one = S.evaluate_one(runner, tuple(SQUAD), SQUAD, S.Scenario(), (0, 30), 2, seed=6, chunks=3)
+    assert via_evaluate["total"].tolist() == via_one["total"].tolist()
+
+
+def test_evaluate_one_bank_and_recall_changes_who_faces_the_balls() -> None:
+    """Bankable top batters recalled on a cheap wicket face more balls than plain retirement."""
+    scenario = S.Scenario(retire_at=25)
+    with R.Runner([rule(0.4)], workers=1) as runner:
+        plain = S.evaluate_one(runner, tuple(SQUAD), SQUAD, scenario, (0, 200), 2, seed=8, chunks=4)
+        banked = S.evaluate_one(runner, tuple(SQUAD), SQUAD, scenario, (0, 200), 2, seed=8, chunks=4,
+                                bankable=SQUAD[:4], recall_within_balls=6, recall_below_runs=5)
+    # The top four are on strike more often when they can be recalled early.
+    assert banked["balls"][:, :, :4].mean() > plain["balls"][:, :, :4].mean()

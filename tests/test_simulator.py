@@ -202,3 +202,120 @@ def test_illegal_allocation_rejected() -> None:
             bowling_allocation=bad_allocation,
             rng=np.random.default_rng(6),
         )
+
+
+def test_bankable_batters_use_the_optional_threshold_others_do_not() -> None:
+    """Only bankable batters may retire at 25; everyone else waits for 35."""
+    skills = make_skills(p_out=0.0, p_bound=0.0, srr=0.0, p_extra=0.0, keepers=())
+    fielding = {p.name: p for p in skills}
+    result = simulate_innings(
+        batting_skills=skills,
+        bowling_skills=fielding,
+        bowling_rotation=[p.name for p in skills],
+        bowling_allocation=standard_allocation(skills),
+        rng=np.random.default_rng(2),
+        conditions=U11,
+        population_econ=0.55,
+        retire_at_balls=25,
+        bankable=("P0", "P1"),
+    )
+    cards = {c.name: c for c in result.batter_cards}
+    assert cards["P0"].retired and cards["P0"].balls == 25
+    assert cards["P1"].retired and cards["P1"].balls == 25
+    for card in result.batter_cards:
+        if card.name not in ("P0", "P1") and card.retired:
+            assert card.balls == 35
+
+
+def _bank_and_recall_fixture():
+    """A squad of two indestructible batters and seven who are out first ball.
+
+    Built so a cheap wicket is guaranteed and the banked batters, once
+    recalled, never get out themselves, making the effect of recall on
+    who bats easy to read off the final cards.
+    """
+    from junior_cricket.simulator import PlayerSkills
+
+    durable = [PlayerSkills(name=f"P{i}", p_out=0.0, p_bound=0.0, srr=0.0, p_wicket=1.0,
+                             econ=0.55, p_extra=0.0) for i in range(2)]
+    fragile = [PlayerSkills(name=f"P{i}", p_out=1.0, p_bound=0.0, srr=0.0, p_wicket=1.0,
+                             econ=0.55, p_extra=0.0) for i in range(2, 9)]
+    skills = durable + fragile
+    fielding = {p.name: p for p in skills}
+    allocation = {"P0": 4, "P1": 4, "P2": 3, "P3": 3, "P4": 3, "P5": 3, "P6": 3, "P7": 1, "P8": 1}
+    return skills, fielding, allocation
+
+
+def test_recall_brings_back_a_banked_batter_ahead_of_fresh_ones() -> None:
+    """A cheap wicket recalls a banked batter instead of the next fresh one."""
+    skills, fielding, allocation = _bank_and_recall_fixture()
+    result = simulate_innings(
+        batting_skills=skills,
+        bowling_skills=fielding,
+        bowling_rotation=[p.name for p in skills],
+        bowling_allocation=allocation,
+        rng=np.random.default_rng(0),
+        conditions=U11,
+        population_econ=0.55,
+        retire_at_balls=25,
+        bankable=("P0", "P1"),
+        recall_within_balls=6,
+        recall_below_runs=5,
+    )
+    cards = {c.name: c for c in result.batter_cards}
+    assert cards["P0"].resumed and cards["P1"].resumed
+    # Recall jumped the queue: several fresh batters were never needed.
+    assert sum(card.balls == 0 for card in result.batter_cards) >= 3
+    assert result.wickets < 7
+
+
+def test_without_recall_thresholds_fresh_batters_come_in_as_usual() -> None:
+    """Bankable alone, with no recall thresholds, only changes who retires early."""
+    skills, fielding, allocation = _bank_and_recall_fixture()
+    result = simulate_innings(
+        batting_skills=skills,
+        bowling_skills=fielding,
+        bowling_rotation=[p.name for p in skills],
+        bowling_allocation=allocation,
+        rng=np.random.default_rng(0),
+        conditions=U11,
+        population_econ=0.55,
+        retire_at_balls=25,
+        bankable=("P0", "P1"),
+    )
+    # Every fragile batter gets a turn: none are skipped by an early recall.
+    assert result.wickets == 7
+    for card in result.batter_cards:
+        if card.name not in ("P0", "P1"):
+            assert card.balls >= 1 and card.out
+
+
+def test_bankable_name_outside_batting_order_rejected() -> None:
+    """A bankable name that is not in the batting order is an error."""
+    skills = make_skills()
+    fielding = {p.name: p for p in skills}
+    with pytest.raises(ValueError):
+        simulate_innings(
+            batting_skills=skills,
+            bowling_skills=fielding,
+            bowling_rotation=[p.name for p in skills],
+            bowling_allocation=standard_allocation(skills),
+            rng=np.random.default_rng(6),
+            retire_at_balls=25,
+            bankable=("not-a-player",),
+        )
+
+
+def test_recall_threshold_without_bankable_rejected() -> None:
+    """A recall threshold with no bankable list is an error."""
+    skills = make_skills()
+    fielding = {p.name: p for p in skills}
+    with pytest.raises(ValueError):
+        simulate_innings(
+            batting_skills=skills,
+            bowling_skills=fielding,
+            bowling_rotation=[p.name for p in skills],
+            bowling_allocation=standard_allocation(skills),
+            rng=np.random.default_rng(6),
+            recall_within_balls=6,
+        )

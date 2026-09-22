@@ -177,15 +177,58 @@ Main scenario (retire at 35, U10 boundary rates, random attack), runs against
 strongest to weakest: strong-middle alternating -0.3 ± 0.3, balanced pairs (top
 six) -0.8 ± 0.4, strong-weak alternating -7.4 ± 0.4, weakest to strongest
 -18.7 ± 0.5, random orders -9.1 on average. The swap search found nothing better
-than strongest to weakest, and in none of 35 other scenarios (retirement 25, 30 or
-35; boundary shift 0, -0.7, -1.4; skill drift 0 or 0.3; random or smart attack) did
-any alternative beat it by more than 0.2 runs. Split by opposition attack strength
-(thirds of the worlds), strong-weak alternating loses -7.3 ± 0.6 against the strongest
-attacks and -8.0 ± 0.7 against the weakest, so pairing does not shield the best batters
-from the best bowling. The mechanism is who gets the balls:
-the six best batters face 17 to 20 balls each under the conventional order.
-Retiring everyone at 25 instead of 35 costs about 5 runs at the current ground
-size; a per-batter policy is not yet modelled.
+than strongest to weakest, and among these *fixed orders*, none of the 35 other
+scenarios (retirement 25, 30 or 35; boundary shift 0, -0.7, -1.4; skill drift 0 or
+0.3; random or smart attack) found an alternative order beating it by more than 0.2
+runs. Split by opposition attack strength (thirds of the worlds), strong-weak
+alternating loses -7.3 ± 0.6 against the strongest attacks and -8.0 ± 0.7 against
+the weakest, so pairing does not shield the best batters from the best bowling. The
+mechanism is who gets the balls: the six best batters face 17 to 20 balls each
+under the conventional order.
+
+**Per-batter retirement: "bank top 4, recall on a cheap wicket".** Confirmed with
+the user (22 Sep 2026): coaches may retire batters individually between 25 and 35
+balls (allowed, not yet used on the day), and the objective includes participation,
+not only total runs. Built as a new engine feature (`simulator.py`: `bankable`,
+`recall_within_balls`, `recall_below_runs` on `simulate_innings`; `strategies.py`:
+`StrategyTask` gains the same fields, plus `evaluate_one` for a strategy that needs
+its own retirement rule rather than the one `evaluate` shares across a batch) and
+tested via `scripts/compare_batting_strategies.py` alongside the fixed orders, using
+the user's own framing of the policy: the top 4 batters may retire not out at 25
+balls instead of batting on; the strongest currently-banked batter is recalled
+immediately, ahead of the next fresh batter, if whoever comes in next is out within
+6 balls or for under 5 runs (both thresholds are illustrative defaults, not fitted).
+Result: **+1.3 ± 0.2 runs** against strongest to weakest in the main scenario, and
+the best alternative in **all 37 scenarios tested** (main plus the 36-scenario
+grid), ranging +0.7 to +7.4. It helped slightly more against the strongest third
+of opposition attacks (+1.8) than the weakest (+1.2). Balls-by-rank shows the gain
+comes from the best batter facing about 2 more balls (20.1 to 22.1) at the expense
+of about 1 fewer for the weakest (5.3 to 4.1): the runs-maximising version of the
+policy is not, by itself, a direct answer to "everyone should get a go"; a
+fairness-weighted recall rule (protect the weakest batters' balls rather than
+maximise runs) has not been built. Retiring *every* batter at 25 rather than 35
+(no bankable subset) still costs about 5 runs at the current ground size.
+
+**Team fielding effect: design, not yet built.** The user approved adding this
+(22 Sep 2026) but has no view on mechanism. Plan: `ball_model.py`'s joint model
+already gives each component (`d` dismissal, `b` boundary, `s` scoring) a batter
+effect, a bowler effect, and (for `b`/`s` only) a per-game effect shared by both
+sides batting that day. Add one more term to `d` only: a per-game effect specific
+to *our* team's fielding (a `HalfNormal` scale plus a `Normal` group mean, non-centred
+by game, mirroring the existing `game_b`/`game_s` pattern), added to a ball's dismissal
+log-odds only when the bowler is one of ours. Checked: PlayHQ's raw scorecards do not
+tag who kept or fielded well (grepped a sample `scorecard.json`, no match), so this
+cannot be a per-fielder effect; it is scoped to a team-level, per-game nudge, which
+needs no new data collection (only which side bowled each ball, already known from
+the alias convention: `P0x` ours, `O0x` opposition). This directly targets the
+diagnosed bias (section "U10 simulator check" below): our own bowlers currently take
+more wickets than their individual skills explain. Not yet built: needs a refit
+(`fit_ball_model.py`) and will shift the headline replay and strategy numbers above,
+so it is being kept as its own step rather than folded into this session's changes.
+Wicketkeeper flags (`is_wicketkeeper` already exists in the player registry and
+`PlayerSkills`, but is only wired into bowling-tier allocation, not dismissal
+modelling) would need a real per-game record of who kept, which PlayHQ does not
+provide; blocked on the coach supplying it.
 
 ## Caveats that matter for 2026/27
 
@@ -202,11 +245,14 @@ size; a per-batter policy is not yet modelled.
 
 ## Next steps (in order)
 
-1. Add a team fielding effect (and test ball-count and position effects) to
-   the joint model; re-run the totals check and the replays.
-2. Confirm the U11 retirement rule, then add per-batter retirement policies to
-   the U11 engine and the strategy comparison.
-3. Wire wicketkeeper flags into the pipeline.
+1. Add the team fielding effect (design above) to the joint model; refit; re-run
+   the totals check, the replays and the strategy comparison (numbers above will
+   move).
+2. Wire wicketkeeper flags into the pipeline, if the coach can supply who kept
+   each game.
+3. Consider a fairness-weighted variant of bank-and-recall that protects the
+   weakest batters' balls specifically, if the current runs-maximising version
+   (see above) is not what is wanted.
 4. Fetch the two missing games and 2024/25 (API key, or slowly later).
 5. When BNJCA publishes the 2026/27 U11 draw (Round 1 Sat 10 Oct 2026), get
    the grade ID, fetch, fit, and rerun the strategy comparison and optimiser for
@@ -233,6 +279,13 @@ size; a per-batter policy is not yet modelled.
   intervals include uncertainty about each player as well as ball-to-ball luck.
 - A batter's value for ordering is the expected runs in a 30-ball stint with a
   dismissal ending it.
+- Bank-and-recall's recall priority is the caller-supplied `bankable` order
+  (strongest first); the engine does not rank players itself, so the same
+  mechanism works for a synthetic test squad or the real one.
+- A recalled batter cannot retire again this innings (`resumed`, pre-existing
+  flag reused): without this, an indestructible recalled batter and a
+  still-batting partner can both become un-dismissable, freezing the wicket
+  count for the rest of the innings.
 
 ## Environment notes
 

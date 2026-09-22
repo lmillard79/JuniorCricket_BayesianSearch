@@ -370,6 +370,9 @@ def simulate_innings(
     population_econ: float = 0.55,
     retire_at_balls: Optional[int] = None,
     outcomes: Optional["BallOutcomes"] = None,
+    bankable: Optional[Sequence[str]] = None,
+    recall_within_balls: Optional[int] = None,
+    recall_below_runs: Optional[int] = None,
 ) -> InningsResult:
     """Simulate one innings ball by ball under the encoded rules.
 
@@ -387,6 +390,18 @@ def simulate_innings(
         outcomes: Optional per-ball rule (see ``BallOutcomes``), for
             example the joint batter-by-bowler model. When omitted the
             hand-built combination of ``PlayerSkills`` rates is used.
+        bankable: Names allowed to use ``retire_at_balls`` as their
+            optional threshold; everyone else waits for the mandatory
+            cap regardless of ``retire_at_balls``. None means everyone
+            is eligible (the plain retirement rule).
+        recall_within_balls: If a later batter is out having faced no
+            more than this many balls, the strongest currently-banked
+            batter (``bankable`` order) comes in next, ahead of the
+            next fresh batter. Requires ``bankable``.
+        recall_below_runs: As ``recall_within_balls``, triggered when
+            the later batter is out for no more than this many runs.
+            Either condition being met is enough to recall. Requires
+            ``bankable``.
 
     Returns:
         The completed innings result.
@@ -394,7 +409,9 @@ def simulate_innings(
     Raises:
         NotImplementedError: For formats where dismissed batters
             continue (U10), which this engine does not model.
-        ValueError: On invalid bowling configuration.
+        ValueError: On invalid bowling configuration, or a bankable
+            name outside the batting order, or a recall threshold
+            given without ``bankable``.
     """
     if conditions.dismissed_batter_continues:
         raise NotImplementedError(
@@ -433,6 +450,16 @@ def simulate_innings(
             f"{conditions.retirement_optional_balls} and "
             f"{conditions.retirement_mandatory_balls}"
         )
+    if bankable is not None:
+        unknown = set(bankable) - {p.name for p in batting_skills}
+        if unknown:
+            raise ValueError(
+                f"bankable names not in batting order: {sorted(unknown)}"
+            )
+    if (recall_within_balls is not None or recall_below_runs is not None) and bankable is None:
+        raise ValueError(
+            "recall_within_balls/recall_below_runs require bankable"
+        )
 
     n_batters = len(batting_skills)
     cards = {p.name: BatterCard(name=p.name) for p in batting_skills}
@@ -454,10 +481,24 @@ def simulate_innings(
     extras_runs = 0
     fair_balls_total = 0
     overs_completed = 0
+    pending_recall = False
 
     def _next_available() -> Optional[PlayerSkills]:
-        """Fetch the next batter: fresh, else front of retired queue."""
-        nonlocal next_batter
+        """Fetch the next batter: a recall pick, else fresh, else the retired queue.
+
+        A recall (armed by a cheap or quick dismissal, see
+        ``recall_within_balls``/``recall_below_runs``) is consumed here
+        whether or not it finds anyone to bring back, so it cannot fire
+        later for an unrelated substitution.
+        """
+        nonlocal next_batter, pending_recall
+        if pending_recall:
+            pending_recall = False
+            for name in bankable or ():
+                for i, player in enumerate(retired_queue):
+                    if player.name == name:
+                        cards[player.name].resumed = True
+                        return retired_queue.pop(i)
         if next_batter < n_batters:
             player = batting_skills[next_batter]
             next_batter += 1
@@ -470,12 +511,20 @@ def simulate_innings(
         return None
 
     def _try_retire(player: PlayerSkills) -> bool:
-        """Retire a batter when the policy thresholds are hit."""
+        """Retire a batter when the policy thresholds are hit.
+
+        A ``bankable`` name may use ``retire_at_balls`` as its optional
+        threshold; anyone else waits for the mandatory cap regardless of
+        ``retire_at_balls``.
+        """
         card = cards[player.name]
         if card.out or card.retired or card.resumed:
             return False
         mandatory = conditions.retirement_mandatory_balls
-        optional = retire_at_balls or mandatory
+        if bankable is not None and player.name not in bankable:
+            optional = mandatory
+        else:
+            optional = retire_at_balls or mandatory
         if card.balls >= mandatory or (
             optional < mandatory and card.balls >= optional
         ):
@@ -539,9 +588,15 @@ def simulate_innings(
                 striker_out = (not run_out) or (
                     rng.random() < RUN_OUT_STRIKER_SHARE
                 )
-                cards[(striker if striker_out else non_striker).name].out = True
+                dismissed = cards[(striker if striker_out else non_striker).name]
+                dismissed.out = True
                 if not run_out:
                     bowler_card.wickets += 1
+                if bankable is not None and (
+                    (recall_within_balls is not None and dismissed.balls <= recall_within_balls)
+                    or (recall_below_runs is not None and dismissed.runs <= recall_below_runs)
+                ):
+                    pending_recall = True
                 if wickets >= conditions.wickets_all_out:
                     break
                 replacement = _next_available()

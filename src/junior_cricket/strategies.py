@@ -182,6 +182,11 @@ class StrategyTask:
             its number and ``seed``.
         reps: Innings played in each world.
         seed: Base entropy.
+        bankable: Names allowed to retire at ``scenario.retire_at``
+            instead of only the mandatory cap; empty means everyone is
+            eligible, the plain retirement rule (see ``simulate_innings``).
+        recall_within_balls: Passed to ``simulate_innings``.
+        recall_below_runs: Passed to ``simulate_innings``.
     """
 
     order: Tuple[str, ...]
@@ -190,6 +195,9 @@ class StrategyTask:
     worlds: Tuple[int, int]
     reps: int
     seed: int
+    bankable: Tuple[str, ...] = ()
+    recall_within_balls: Optional[int] = None
+    recall_below_runs: Optional[int] = None
 
 
 def _bowler_economy(rule: JointOutcomes, name: str) -> float:
@@ -257,7 +265,10 @@ def run_strategy_task(task: StrategyTask) -> Dict[str, np.ndarray]:
             rng = np.random.default_rng([task.seed, start + i, r, 1])
             result = simulate_innings(
                 batting, fielders, rotation, allocation, rng, conditions=U11,
-                retire_at_balls=task.scenario.retire_at, outcomes=rule)
+                retire_at_balls=task.scenario.retire_at, outcomes=rule,
+                bankable=task.bankable or None,
+                recall_within_balls=task.recall_within_balls,
+                recall_below_runs=task.recall_below_runs)
             cards = {c.name: c for c in result.batter_cards}
             out["total"][i, r], out["wickets"][i, r] = result.runs, result.wickets
             out["balls"][i, r] = [cards[p].balls for p in task.ranking]
@@ -300,6 +311,54 @@ def evaluate(
         for k, v in part.items():
             bucket[k].append(v)
     return {name: {k: np.concatenate(v) for k, v in parts.items()} for name, parts in joined.items()}
+
+
+def evaluate_one(
+    runner: Runner, order: Sequence[str], ranking: Sequence[str], scenario: Scenario,
+    worlds: Tuple[int, int], reps: int, seed: int, chunks: int = 14,
+    bankable: Sequence[str] = (), recall_within_balls: Optional[int] = None,
+    recall_below_runs: Optional[int] = None,
+) -> Dict[str, np.ndarray]:
+    """Play one order through the worlds, with an optional bank-and-recall rule.
+
+    ``evaluate`` shares one retirement rule (``scenario.retire_at``) across
+    every strategy in the batch, which cannot express a strategy that needs
+    its own rule, such as bank and recall: some batters retire early and can
+    be brought back ahead of the next fresh batter (see ``simulate_innings``).
+    This plays a single order with its own such rule, through the same kind
+    of worlds ``evaluate`` would use, so the result is a drop-in entry
+    alongside an ``evaluate`` result for ``paired``, ``world_means``, etc.
+
+    Args:
+        runner: Where to run the simulations.
+        order: Our batting order.
+        ranking: Our players best to worst.
+        scenario: Assumptions about the U11 world.
+        worlds: [start, stop) world numbers.
+        reps: Innings per world.
+        seed: Base entropy.
+        chunks: Pieces the worlds are split into for parallel work.
+        bankable: Names allowed to retire at ``scenario.retire_at``.
+        recall_within_balls: See ``simulate_innings``.
+        recall_below_runs: See ``simulate_innings``.
+
+    Returns:
+        The arrays of ``run_strategy_task`` joined across chunks.
+    """
+    start, stop = worlds
+    edges = np.linspace(start, stop, min(chunks, stop - start) + 1).astype(int)
+    tasks = [
+        StrategyTask(tuple(order), tuple(ranking), scenario, (int(lo), int(hi)), reps, seed,
+                     bankable=tuple(bankable), recall_within_balls=recall_within_balls,
+                     recall_below_runs=recall_below_runs)
+        for lo, hi in zip(edges[:-1], edges[1:])
+    ]
+    parts = runner.run(tasks, worker=run_strategy_task)
+    bucket: Dict[str, list] = {k: [] for k in parts[0]}
+    for part in parts:
+        for k, v in part.items():
+            bucket[k].append(v)
+    return {k: np.concatenate(v) for k, v in bucket.items()}
 
 
 # --------------------------------------------------------------------------

@@ -22,10 +22,13 @@ to run code to follow it; the commands are collected in section 7.
   2. Under U10 rules the batting order barely matters (about 1 run of margin),
      because every batter is given a fixed 13 or 14 balls. A single game's margin
      swings about 28 runs on luck alone.
-  3. Under U11 rules the order matters much more, and the conventional order
-     (strongest to weakest) held up against every alternative tried, including
-     strong-weak pairings, across a wide range of assumptions. See
-     [BATTING_STRATEGY_METHOD.md](BATTING_STRATEGY_METHOD.md).
+  3. Under U11 rules the order matters much more, and among *fixed* orders the
+     conventional one (strongest to weakest) held up against every alternative
+     tried, including strong-weak pairings, across a wide range of assumptions.
+     The one thing that beat it was not a different order: letting the top four
+     retire at 25 balls and recalling the strongest one straight back in if the
+     next batter is out cheaply gained about 1.3 runs, in every scenario tested.
+     See [BATTING_STRATEGY_METHOD.md](BATTING_STRATEGY_METHOD.md).
 
 ## 2. How the pieces fit together
 
@@ -280,10 +283,16 @@ Open `strategy_report.html`. The main table has one row per batting strategy:
 - **Share of worlds better**: in what share of the simulated worlds the strategy scored
   more than the conventional order. Around 50% means indistinguishable.
 
+One row, `bank top 4, recall on a cheap wicket`, is not a different order at all: it
+keeps the conventional order but lets the top four retire not out at 25 balls and
+brings the strongest one straight back in, ahead of the next fresh batter, if whoever
+comes in next is out within 6 balls or for under 5 runs. It is the only alternative
+that gained runs rather than lost them.
+
 A second table splits the same comparison by how strong the opposition attack was (the
 strongest, middle and weakest thirds of the simulated worlds; `strategy_by_attack_strength.csv`).
 If a pairing protected the best batters from strong bowling it would show as a smaller
-loss in the first column. It does not.
+loss in the first column. It does not, for any of the reordering strategies.
 
 The charts: `worms.png` (median runs accumulated and per over by strategy),
 `balls_by_rank.png` (who gets the balls and what they do with them, which is the

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import dataclasses
 import itertools
 from pathlib import Path
 from typing import Dict, List
@@ -42,6 +43,7 @@ import pandas as pd
 from junior_cricket import replay as R
 from junior_cricket import strategies as S
 from junior_cricket.logging_setup import setup_logging
+from junior_cricket.rules_u11 import U11
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = REPO_ROOT / "data" / "outputs"
@@ -50,6 +52,16 @@ DEFAULT_SQUAD = "P01,P03,P04,P05,P06,P07,P08,P09,P10"
 BASELINE = "strongest to weakest"
 MAIN = S.Scenario()
 TEST_WORLDS = (100_000, 104_000)                 # never used for tuning
+
+# The bank-and-recall strategy: the conventional order, but the top BANK_SIZE
+# batters may retire (not out) at 25 balls instead of batting on, and come
+# straight back in, strongest first, ahead of the next fresh batter, if
+# whoever comes in next is out within RECALL_WITHIN_BALLS balls or for under
+# RECALL_BELOW_RUNS runs. Everyone else bats on as usual.
+BANK_NAME = "bank top 4, recall on a cheap wicket"
+BANK_SIZE = 4
+RECALL_WITHIN_BALLS = 6
+RECALL_BELOW_RUNS = 5
 
 
 def scenario_grid() -> List[S.Scenario]:
@@ -96,6 +108,44 @@ def attack_table(results: Dict[str, Dict[str, np.ndarray]]) -> pd.DataFrame:
             row[label] = f"{d.mean():+.1f} ± {d.std(ddof=1) / np.sqrt(len(d)):.1f}"
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def with_bank_recall(scenario: S.Scenario) -> S.Scenario:
+    """``scenario``, pinned to the optional-retirement balls bank-and-recall needs.
+
+    Its bankable batters always retire at 25 (the earliest the rules allow),
+    which is the strategy's own rule, not a scenario assumption to sweep, so
+    this ignores whatever the grid's ``retire_at`` happens to be.
+    """
+    return dataclasses.replace(scenario, retire_at=U11.retirement_optional_balls)
+
+
+def bank_recall_result(
+    runner: R.Runner, order, ranking, scenario: S.Scenario, worlds, reps: int, seed: int,
+):
+    """Play the bank-and-recall strategy through the same worlds as everyone else."""
+    return S.evaluate_one(runner, order, ranking, with_bank_recall(scenario), worlds, reps, seed,
+                          bankable=ranking[:BANK_SIZE], recall_within_balls=RECALL_WITHIN_BALLS,
+                          recall_below_runs=RECALL_BELOW_RUNS)
+
+
+def bank_recall_row(scenario: S.Scenario, baseline, result) -> dict:
+    """Summary row for bank-and-recall, grouped under ``scenario`` like its siblings.
+
+    Its own batters retire at 25 regardless of ``scenario.retire_at``, so
+    ``retire_at`` here is set to that literal figure rather than the
+    scenario's, even though the "scenario" label text matches the outer
+    grid point (so the sensitivity chart groups it with the right column).
+    """
+    diff, se, better = S.paired(result, baseline)
+    return {
+        "scenario": scenario.label(), "retire_at": U11.retirement_optional_balls,
+        "boundary_shift": scenario.boundary_shift, "drift_sd": scenario.drift_sd,
+        "tactics": scenario.tactics, "strategy": BANK_NAME,
+        "mean_total": float(S.world_means(result).mean()), "sd_total": float(result["total"].std()),
+        "mean_wickets": float(result["wickets"].mean()),
+        "diff_vs_baseline": diff, "se": se, "share_of_worlds_better": better,
+    }
 
 
 def plot_worms(results, path: Path, names: List[str], manhattan: List[str]) -> None:
@@ -244,6 +294,10 @@ def main() -> None:
         fresh = S.evaluate(runner, {k: v for k, v in orders.items() if not k.startswith("random")},
                            ranking, MAIN, TEST_WORLDS, args.reps, args.seed)
         rows += summarise(MAIN, fresh)
+        bank_result = bank_recall_result(runner, orders[BASELINE], ranking, MAIN, TEST_WORLDS,
+                                         args.reps, args.seed)
+        rows.append(bank_recall_row(MAIN, fresh[BASELINE], bank_result))
+        fresh[BANK_NAME] = bank_result
         main_named = fresh
         rand_diffs = [S.paired(main_results[k], main_results[BASELINE])[0]
                       for k in main_results if k.startswith("random")]
@@ -254,6 +308,9 @@ def main() -> None:
             res = S.evaluate(runner, grid_orders, ranking, scenario, (0, args.grid_worlds),
                              args.reps, args.seed)
             rows += summarise(scenario, res)
+            grid_bank = bank_recall_result(runner, orders[BASELINE], ranking, scenario,
+                                           (0, args.grid_worlds), args.reps, args.seed)
+            rows.append(bank_recall_row(scenario, res[BASELINE], grid_bank))
             logger.info("Grid: %s", scenario.label())
 
     table = pd.DataFrame(rows)
@@ -262,13 +319,15 @@ def main() -> None:
                          index=[f"{i + 1} {p}" for i, p in enumerate(ranking)])
     balls.to_csv(out / "strategy_balls_by_rank.csv")
 
-    shown = [BASELINE, "strong-weak alternating", "balanced pairs (top six)", "weakest to strongest"]
+    shown = [BASELINE, "strong-weak alternating", "balanced pairs (top six)", "weakest to strongest",
+             BANK_NAME]
     if searched and searched != orders[BASELINE]:
         shown.append("searched order")
     plot_worms(main_named, out / "worms.png", shown,
                [BASELINE, "strong-weak alternating", "weakest to strongest"])
     plot_balls(main_named, ranking, out / "balls_by_rank.png", shown)
-    plot_sensitivity(table[table["strategy"].isin(list(grid_orders) + [BASELINE])], out / "sensitivity.png")
+    plot_sensitivity(table[table["strategy"].isin(list(grid_orders) + [BASELINE, BANK_NAME])],
+                     out / "sensitivity.png")
 
     main_rows = table[table["scenario"] == MAIN.label()].iloc[: len(main_named)]
     if searched and searched == orders[BASELINE]:
@@ -310,6 +369,13 @@ U11 ground; skill drift; smarter opposition), no alternative beat strongest to w
 <ul>{answer}</ul>
 <p>Negative means fewer runs than the conventional order. Comparisons are paired: every strategy met the same
 worlds, so a difference is not down to one of them meeting a tougher attack.</p>
+<h3>A different kind of alternative: banking and recalling</h3>
+<p><b>{BANK_NAME}</b> keeps the conventional order, but changes the retirement tactics instead: the top
+{BANK_SIZE} batters may retire (not out) once they reach 25 balls rather than batting on, and if whoever comes
+in next is out within {RECALL_WITHIN_BALLS} balls or for under {RECALL_BELOW_RUNS} runs, the strongest retired
+batter comes straight back in, ahead of the next fresh batter. Everyone else bats until out or the mandatory
+35-ball cap, as usual. Its "retire at" figure in the tables below is always 25, regardless of what the column
+or scenario says for the other strategies, since that is the rule being tested, not an assumption to sweep.</p>
 <h3>How to read the tables and charts</h3>
 <ul>
 <li><b>Mean total, SD</b>: the average and spread of our innings total across worlds.</li>

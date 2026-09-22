@@ -28,9 +28,12 @@ override the leagues' participation rules and it is not a forecast.
   differ modestly in wickets and scoring shots, but not in boundaries.
 - Under U10 rules the batting order barely matters (about 1 run of margin) because every
   batter gets a fixed 13 or 14 balls. Luck alone swings a game's margin by about 28 runs.
-- Under U11 rules order matters more. Strongest to weakest held up against every
-  alternative tried, including strong-weak pairings, across 36 sets of assumptions about
-  the move to U11. Pairing a strong batter with a weak one costs runs.
+- Under U11 rules order matters more. Among *fixed* orders, strongest to weakest held up
+  against every alternative tried, including strong-weak pairings, across 36 sets of
+  assumptions about the move to U11; pairing a strong batter with a weak one costs runs.
+  The one alternative that beat it was not a different order at all: letting the top
+  four retire at 25 balls and recalling the strongest one straight back in if the next
+  batter is out cheaply gained about 1.3 runs, in every scenario tested.
 - The model understates our own side by about 10%; a team fielding effect is the next
   planned change. U11 results extrapolate from U10 skills and are indicative until U11
   games have been played.
