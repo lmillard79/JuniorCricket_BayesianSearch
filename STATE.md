@@ -1,7 +1,7 @@
 # STATE.md - Session Close Handoff
 
 Session: 2026-09-22, personal PC (game replays, U11 batting-strategy method,
-bank-and-recall retirement policy)
+bank-and-recall retirement policy, team fielding effect)
 Earlier: 2026-09-21 (real-data bring-up, validation, joint model)
 Project: JuniorCricket_BayesianSearch (VDCC lineup optimiser)
 Durable detail and all evidence: PROJECT_STATUS.md. How to read the outputs:
@@ -10,14 +10,24 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
 ## 1. Current status
 
 * Runs end to end on the personal PC (Windows 11, Python 3.14.7, PyMC
-  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 150 passed. No C
+  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 157 passed. No C
   compiler needed: sampling uses numpyro/JAX.
+* **Team fielding effect** (new this session): the user corrected an earlier wrong
+  claim that PlayHQ's data does not name fielders — it does, in both the scorecard
+  stats and the ball-by-ball events feed, the second of which `playhq_parse.py` was
+  already parsing and just not carrying further. Added a per-game effect on
+  dismissal specific to our own team's fielding (`ball_model.py`: `mu_f_d`, `sf_d`,
+  `field_d`), refit: **0.17 [-0.15, 0.47]** on the logit scale, 81% posterior
+  probability positive — real but modest, narrows the "10% stingy on our side" gap
+  without closing it. Individual catches/run-outs are now recorded per ball too
+  (`playhq_scorebook.py`'s `fielder` column) and reported descriptively (not
+  fitted) in `player_report.md`'s new Fielding table.
 * **Game replays** (`scripts/replay_games.py`): each real U10 game is rebuilt and
   replayed thousands of times; recorded totals are placed against the replay
-  median (above for our total in 7 of 12 games, average percentile 61st: the
-  known understatement of our side); batting order is worth about +0.8 runs of
+  median (above for our total in 7 of 12 games, average percentile 59th, was 61st
+  before the fielding effect); batting order is worth about +0.9 runs of
   margin at best and the bowling split +0.7 (keepers as played), against a
-  28-run luck spread. Over-by-over Manhattan and worm charts per game.
+  29-run luck spread. Over-by-over Manhattan and worm charts per game.
 * **U11 batting strategies** (`scripts/compare_batting_strategies.py`): named orders
   played through the same thousands of "worlds" of unknown opposition, tactics and
   ground. Among fixed orders, strongest to weakest was not beaten by anything tried,
@@ -29,7 +39,7 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
   objective includes participation. Built into `simulator.py`/`strategies.py`: the
   top 4 batters may retire not out at 25 balls; the strongest banked one is recalled
   immediately if the next batter is out within 6 balls or for under 5 runs. Result:
-  +1.3 ± 0.2 runs against strongest to weakest, and the best alternative in all 37
+  +1.4 ± 0.2 runs against strongest to weakest, and the best alternative in all 37
   scenarios tested (the only one that gained runs rather than lost them). Caveat: it
   shifts a couple of balls toward the best batter and away from the weakest, so it is
   not by itself a fairness win for the weakest batters specifically.
@@ -45,35 +55,28 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
 
 ## 2. Open items, in priority order
 
-1. **Team fielding effect.** White took more wickets than its individual
-   bowlers explain (0.80 x), and the replays put our totals above the median
-   in most games. Design set (PROJECT_STATUS.md): a per-game effect on the
-   dismissal component specific to our own team's fielding, mirroring the
-   existing `game_b`/`game_s` pattern, applied only to balls our bowlers
-   bowled (known from the `P0x`/`O0x` alias convention; PlayHQ does not tag
-   fielding quality itself). Needs a refit (`fit_ball_model.py`), then
-   re-run `check_u10_totals.py`, `replay_games.py` and
-   `compare_batting_strategies.py` (their numbers will move).
-2. **Wicketkeeper flags.** `is_wicketkeeper` already exists in the player
+1. **Wicketkeeper flags.** `is_wicketkeeper` already exists in the player
    registry and `PlayerSkills`, but only feeds bowling-tier allocation, not
-   dismissal modelling. PlayHQ's data does not record who kept; would need
-   the coach's own per-game record. Ask before building.
-3. **Fairness-weighted bank-and-recall.** The runs-maximising recall policy
+   dismissal modelling. PlayHQ's data does not record who kept (checked
+   properly this session; it does record catches and run outs, now used, see
+   section 1); a keeper flag would need the coach's own per-game record. Ask
+   before building.
+2. **Fairness-weighted bank-and-recall.** The runs-maximising recall policy
    just built shifts a couple of balls toward the best batter and away from
    the weakest, so it is not by itself an answer to "everyone should get a
    go". Build a variant that recalls to protect the weakest batters' balls,
-   if that is what is wanted, even at some cost to the +1.3 run gain.
-4. **U10 to U11 transfer.** U11 boundaries are 45 m (U10 30 to 35 m). The U10
+   if that is what is wanted, even at some cost to the +1.4 run gain.
+3. **U10 to U11 transfer.** U11 boundaries are 45 m (U10 30 to 35 m). The U10
    boundary rate will not carry over at face value; the strategy grid tests
    shifts of 0, -0.7 and -1.4 on the boundary log-odds. First U11 games are the
    first direct test: refit with a U11 offset per outcome, and compare balls
    faced by batting position and the boundary rate with the model's.
-5. **Two games lack ball-by-ball** (`e7967782`, `67b87a4c`). A burst of
+4. **Two games lack ball-by-ball** (`e7967782`, `67b87a4c`). A burst of
    requests earned a CloudFront 403. Do not retry soon; use an API key (the
    user has asked PlayHQ, see the access-notes memory) or re-run
    `fetch_scorecards.py` later (it resumes). One more game (`ee765d0d`) was
    shortened to 18 overs and is left out of the replays.
-6. **2024/25** (season `2470e549`) as an older period; **2026/27** (season
+5. **2024/25** (season `2470e549`) as an older period; **2026/27** (season
    `077d0fa1`, Round 1 Sat 10 Oct 2026): get the U11 grade ID from the team
    page, then fetch, refit, and run `compare_batting_strategies.py --squad ...`
    for the real squad.

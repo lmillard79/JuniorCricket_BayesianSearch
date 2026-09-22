@@ -180,6 +180,21 @@ def test_ball_rows_carry_batter_bowler_and_outcome_as_aliases() -> None:
             assert token not in text
 
 
+def test_ball_rows_carry_the_credited_fielder_as_an_alias() -> None:
+    """A caught dismissal's fielder is aliased in the fielding side's namespace; a bowled one has none."""
+    events = parse_events([
+        event("Alex Ng was bowled by Sam Poe", "0.1", 1, "Sam Poe to Alex Ng", icon="W"),
+        event("Kim Lee was caught by Sam Poe", "0.2", 2, "Sam Poe to Kim Lee", icon="W"),
+    ], HOME)
+    ours, theirs = PlayerAliases(), PlayerAliases(prefix="O")
+    rows, dropped = build_ball_rows(make_card(), INFO, events, None, ours, theirs)
+    assert dropped == 0
+    bowled, caught = rows
+    assert bowled["fielder"] == ""
+    assert caught["fielder"] == "O01"                   # Sam Poe fields for the opposition
+    assert "Sam Poe" not in str(rows) and "Poe" not in str(rows)
+
+
 def test_ball_rows_skip_innings_without_events() -> None:
     rows, _ = build_ball_rows(make_card(), INFO, own_events(), None,
                               PlayerAliases(), PlayerAliases(prefix="O"))

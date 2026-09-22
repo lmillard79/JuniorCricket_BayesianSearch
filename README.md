@@ -33,7 +33,7 @@ override the leagues' participation rules and it is not a forecast.
   assumptions about the move to U11; pairing a strong batter with a weak one costs runs.
   The one alternative that beat it was not a different order at all: letting the top
   four retire at 25 balls and recalling the strongest one straight back in if the next
-  batter is out cheaply gained about 1.3 runs, in every scenario tested.
+  batter is out cheaply gained about 1.4 runs, in every scenario tested.
 - The model understates our own side by about 10%; a team fielding effect is the next
   planned change. U11 results extrapolate from U10 skills and are indicative until U11
   games have been played.

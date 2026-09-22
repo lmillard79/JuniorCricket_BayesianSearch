@@ -67,6 +67,9 @@ class BallData:
         runs: Runs recorded off the ball.
         dismissed: 1 if the ball was a dismissal.
         boundary: 1 if the ball was a four, five or six.
+        ours_fielding: 1 if the bowler (and so the whole fielding side)
+            was our team, 0 for the opposition. Drives the fielding
+            effect, which only ever applies to our own side.
     """
 
     players: List[str]
@@ -77,6 +80,7 @@ class BallData:
     runs: np.ndarray
     dismissed: np.ndarray
     boundary: np.ndarray
+    ours_fielding: np.ndarray
 
     def component(self, name: str) -> Tuple[np.ndarray, np.ndarray]:
         """Mask of balls that inform a component, and their outcomes.
@@ -101,8 +105,11 @@ class BallData:
         return BallData(
             self.players, self.games, self.bat[mask], self.bowl[mask],
             self.game[mask], self.runs[mask], self.dismissed[mask],
-            self.boundary[mask],
+            self.boundary[mask], self.ours_fielding[mask],
         )
+
+
+OUR_ALIAS_PREFIX = "P"   # our own players; the opposition's aliases start with O
 
 
 def load_balls(path: Path) -> Tuple[BallData, pd.DataFrame]:
@@ -113,12 +120,21 @@ def load_balls(path: Path) -> Tuple[BallData, pd.DataFrame]:
 
     Returns:
         (coded data, the raw frame with its ``date`` column parsed).
+
+    Raises:
+        ValueError: If a bowler alias is neither ours nor the
+            opposition's, so ``ours_fielding`` would be silently wrong.
     """
-    frame = pd.read_csv(path, parse_dates=["date"])
+    frame = pd.read_csv(path, parse_dates=["date"], dtype={"fielder": str})
+    frame["fielder"] = frame["fielder"].fillna("")
     players = sorted(set(frame["batter"]) | set(frame["bowler"]))
     games = list(dict.fromkeys(frame["game_id"]))
     index = {p: i for i, p in enumerate(players)}
     gindex = {g: i for i, g in enumerate(games)}
+    bowler_prefix = frame["bowler"].str[0]
+    stray = sorted(set(frame.loc[~bowler_prefix.isin(["P", "O"]), "bowler"]))
+    if stray:
+        raise ValueError(f"Bowler aliases outside the P/O convention: {stray}")
     data = BallData(
         players=players,
         games=games,
@@ -128,6 +144,7 @@ def load_balls(path: Path) -> Tuple[BallData, pd.DataFrame]:
         runs=frame["runs"].to_numpy(),
         dismissed=frame["dismissed"].to_numpy(),
         boundary=frame["boundary"].to_numpy(),
+        ours_fielding=(bowler_prefix == OUR_ALIAS_PREFIX).to_numpy().astype(np.int8),
     )
     return data, frame
 
@@ -137,6 +154,7 @@ def build_ball_model(
     batter_effects: bool = True,
     bowler_effects: bool = True,
     game_effects: bool = True,
+    fielding_effects: bool = True,
 ) -> pm.Model:
     """Build the joint model.
 
@@ -144,7 +162,19 @@ def build_ball_model(
         data: Coded deliveries.
         batter_effects: Include a batting effect per player.
         bowler_effects: Include a bowling effect per player.
-        game_effects: Include a per-game effect on boundary and scoring.
+        game_effects: Include a per-game effect on boundary and scoring,
+            shared by both sides batting that day (ground and conditions).
+        fielding_effects: Include a per-game effect on dismissal, specific
+            to our own side's fielding that day (catches, run outs, general
+            sharpness), on top of the bowler's own effect. Zero for the
+            opposition's bowling, since only our side's fielding quality is
+            of interest and PlayHQ's data cannot attribute it to individual
+            fielders reliably enough to go further than a team-day level
+            (see ``fielding_credit_table`` for the individual counts that
+            are available, kept descriptive rather than fitted). Its group
+            mean (``mu_f_d``) is the systematic edge across all games; its
+            per-game draws (``field_d``) are the day-to-day wobble around
+            that, in the same non-centred style as ``game_effects``.
 
     Returns:
         A ``pm.Model``. Switching the effect flags off gives the simpler
@@ -172,6 +202,12 @@ def build_ball_model(
                 z = pm.Normal(f"zg_{name}", 0.0, 1.0, dims="game")
                 game = pm.Deterministic(f"game_{name}", scale * z, dims="game")
                 eta = eta + game[data.game[mask]]
+            if fielding_effects and name == "d":
+                mu_f = pm.Normal("mu_f_d", 0.0, 0.3)
+                scale_f = pm.HalfNormal("sf_d", 0.3)
+                zf = pm.Normal("zf_d", 0.0, 1.0, dims="game")
+                field = pm.Deterministic("field_d", mu_f + scale_f * zf, dims="game")
+                eta = eta + field[data.game[mask]] * data.ours_fielding[mask]
             pm.Bernoulli(f"y_{name}", logit_p=eta, observed=y)
     return model
 
@@ -200,15 +236,16 @@ def _flat(idata, var: str) -> np.ndarray:
 def _posterior_arrays(idata) -> Dict[str, np.ndarray]:
     """Every variable ``JointOutcomes`` reads, flattened once."""
     names = [f"{p}_{c}" for p in ("a", "sb", "sw", "bat", "bowl") for c in COMPONENTS]
-    names += ["sg_b", "sg_s", "game_b", "game_s"]
+    names += ["sg_b", "sg_s", "game_b", "game_s", "mu_f_d", "sf_d", "field_d"]
     return {n: _flat(idata, n) for n in names if n in idata.posterior}
 
 
 def _posterior_labels(idata) -> Tuple[List[str], List[str]]:
     """(player labels, game labels) in the posterior's own order."""
     players = [str(p) for p in idata.posterior["bat_d"].coords["player"].values]
-    games = ([str(g) for g in idata.posterior["game_b"].coords["game"].values]
-             if "game_b" in idata.posterior else [])
+    game_source = "game_b" if "game_b" in idata.posterior else "field_d"
+    games = ([str(g) for g in idata.posterior[game_source].coords["game"].values]
+             if game_source in idata.posterior else [])
     return players, games
 
 
@@ -255,8 +292,13 @@ class JointOutcomes:
         bat_sd: Component -> spread of batting effects (for new players).
         bowl_sd: Component -> spread of bowling effects.
         game_sd: Component (``b``, ``s``) -> spread of game effects.
-        days: Game ID -> {``b``, ``s``} fitted conditions effect, for
-            replaying a real day (see ``use_day``).
+        fielding_mu: Our team's average fielding edge on dismissal
+            (logit scale); 0.0 when the posterior was fit without it.
+        fielding_sd: Game-to-day spread of that edge around
+            ``fielding_mu``.
+        days: Game ID -> fitted per-day effects: ``b``/``s`` conditions
+            and ``field_d`` (our fielding edge that day), for replaying
+            a real day (see ``use_day``).
         draw: Posterior draw these effects came from; ``None`` for means.
     """
 
@@ -268,6 +310,8 @@ class JointOutcomes:
         bat_sd: Dict[str, float],
         bowl_sd: Dict[str, float],
         game_sd: Dict[str, float],
+        fielding_mu: float = 0.0,
+        fielding_sd: float = 0.0,
         days: Optional[Dict[str, Dict[str, float]]] = None,
         draw: Optional[int] = None,
     ) -> None:
@@ -275,7 +319,12 @@ class JointOutcomes:
         self.bat = {k: dict(v) for k, v in bat.items()}
         self.bowl = {k: dict(v) for k, v in bowl.items()}
         self.bat_sd, self.bowl_sd, self.game_sd = bat_sd, bowl_sd, game_sd
+        self.fielding_mu, self.fielding_sd = fielding_mu, fielding_sd
         self.game = {"b": 0.0, "s": 0.0}
+        self.field_today = 0.0
+        # Whether the dismissal effect currently includes our fielding
+        # edge; toggle with set_fielding_ours before simulating an innings.
+        self.fielding_ours = False
         self.days = days or {}
         self.draw = draw
 
@@ -312,22 +361,30 @@ class JointOutcomes:
             for prefix, table in (("bat", bat), ("bowl", bowl)):
                 for p, v in zip(players, pick(arrays[f"{prefix}_{c}"])):
                     table[p][c] = float(v)
-        days = {}
+        days: Dict[str, Dict[str, float]] = {}
         if "game_b" in arrays:
             gb, gs = pick(arrays["game_b"]), pick(arrays["game_s"])
-            days = {g: {"b": float(b), "s": float(s)} for g, b, s in zip(games, gb, gs)}
+            for g, b, s in zip(games, gb, gs):
+                days.setdefault(g, {}).update({"b": float(b), "s": float(s)})
+        if "field_d" in arrays:
+            for g, f in zip(games, pick(arrays["field_d"])):
+                days.setdefault(g, {})["field_d"] = float(f)
         return cls(
             intercepts={c: scalar(f"a_{c}") for c in COMPONENTS},
             bat=bat, bowl=bowl,
             bat_sd={c: scalar(f"sb_{c}") for c in COMPONENTS},
             bowl_sd={c: scalar(f"sw_{c}") for c in COMPONENTS},
             game_sd={c: scalar(f"sg_{c}") for c in ("b", "s")},
+            fielding_mu=scalar("mu_f_d") if "mu_f_d" in arrays else 0.0,
+            fielding_sd=scalar("sf_d") if "sf_d" in arrays else 0.0,
             days=days, draw=draw,
         )
 
     def use_day(self, game_id: str) -> None:
-        """Fix the ground and conditions effect at a game's fitted value."""
-        self.game = dict(self.days[game_id])
+        """Fix the ground and conditions effect, and our fielding edge, at a game's fitted value."""
+        day = self.days[game_id]
+        self.game = {k: v for k, v in day.items() if k != "field_d"}
+        self.field_today = day.get("field_d", self.fielding_mu)
 
     def register(self, name: str, rng: np.random.Generator) -> None:
         """Draw effects for a player not in the fitted data (an unknown opponent)."""
@@ -335,12 +392,26 @@ class JointOutcomes:
         self.bowl[name] = {c: float(rng.normal(0, self.bowl_sd[c])) for c in COMPONENTS}
 
     def begin_game(self, rng: np.random.Generator) -> None:
-        """Draw this game's ground and conditions effect."""
+        """Draw this game's ground and conditions effect, and our fielding edge."""
         self.game = {c: float(rng.normal(0, self.game_sd[c])) for c in ("b", "s")}
+        self.field_today = float(rng.normal(self.fielding_mu, self.fielding_sd))
+
+    def set_fielding_ours(self, ours: bool) -> None:
+        """Toggle whether the dismissal effect includes our fielding edge.
+
+        Call before simulating an innings: True while our team bowls,
+        False while the opposition bowls. Defaults to False, so a caller
+        that never calls this (the batting-order strategy comparison
+        never simulates our team bowling) is unaffected.
+        """
+        self.fielding_ours = ours
 
     def _eta(self, component: str, striker, bowler) -> float:
-        return (self.a[component] + self.bat[striker.name][component]
+        base = (self.a[component] + self.bat[striker.name][component]
                 + self.bowl[bowler.name][component] + self.game.get(component, 0.0))
+        if component == "d" and self.fielding_ours:
+            base += self.field_today
+        return base
 
     def dismissal_probability(self, striker, bowler) -> float:
         """Probability the ball is a dismissal."""
@@ -434,6 +505,38 @@ def player_profiles(
             "bowling_edge": float(edge),
         })
     return pd.DataFrame(rows)
+
+
+def fielding_credit_table(frame: pd.DataFrame) -> pd.DataFrame:
+    """Catches and run outs credited to each fielder, from the ball rows.
+
+    Descriptive, not fitted: a handful of events per player across a
+    season is a count worth showing a coach, not a modelled skill (unlike
+    the fielding effect in the joint model, which only goes as far as a
+    team-day level; see ``build_ball_model``). It also understates each
+    player's fielding involvement, since only 67 of 172 dismissals in the
+    2025/26 data name a fielder at all (a "bowled" dismissal credits no
+    fielder even though eight team mates were still in the field).
+
+    Args:
+        frame: The ball rows written by ``fetch_scorecards.py``
+            (``playhq_balls.csv``), with a ``fielder`` column.
+
+    Returns:
+        One row per player credited with at least one dismissal: catches,
+        run outs, and the total, most credited first.
+    """
+    fielded = frame[frame["fielder"].fillna("") != ""]
+    catches = fielded.loc[fielded["run_out"] == 0, "fielder"].value_counts()
+    run_outs = fielded.loc[fielded["run_out"] == 1, "fielder"].value_counts()
+    players = sorted(set(fielded["fielder"]))
+    table = pd.DataFrame({
+        "player": players,
+        "catches": [int(catches.get(p, 0)) for p in players],
+        "run_outs": [int(run_outs.get(p, 0)) for p in players],
+    })
+    table["total"] = table["catches"] + table["run_outs"]
+    return table.sort_values("total", ascending=False).reset_index(drop=True)
 
 
 def effect_table(idata, players: Optional[Sequence[str]] = None) -> pd.DataFrame:

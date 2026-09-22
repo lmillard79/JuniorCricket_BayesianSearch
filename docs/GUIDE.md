@@ -27,7 +27,7 @@ to run code to follow it; the commands are collected in section 7.
      tried, including strong-weak pairings, across a wide range of assumptions.
      The one thing that beat it was not a different order: letting the top four
      retire at 25 balls and recalling the strongest one straight back in if the
-     next batter is out cheaply gained about 1.3 runs, in every scenario tested.
+     next batter is out cheaply gained about 1.4 runs, in every scenario tested.
      See [BATTING_STRATEGY_METHOD.md](BATTING_STRATEGY_METHOD.md).
 
 ## 2. How the pieces fit together
@@ -175,30 +175,45 @@ bracket), *runs per over*, and *edge over an average bowler*, which counts each
 wicket as 4 runs plus the runs saved. Bowlers differ less than batters, so read
 small edges (a few tenths of a run) as noise.
 
+A third table, **Fielding**, lists catches and run outs actually credited to each
+player in the ball-by-ball data. This is a plain count, not a model estimate: with
+only a handful of events per player across a season, and most dismissals ("bowled")
+crediting no fielder at all even though everyone else was still in the field, it is
+too little to fit reliably. Players with no credited event are left off the table.
+
 ### 4.2 `ball_model_summary.md` (from `scripts/fit_ball_model.py`)
 
-Four things, top to bottom:
+Five things, top to bottom:
 
-1. **Health line**: "Max R-hat 1.008, min bulk ESS 608, divergences 0." This is the
+1. **Health line**: "Max R-hat 1.012, min bulk ESS 665, divergences 0." This is the
    fit health check from section 3. It is good.
 2. **Baseline**: the average batter against the average bowler. In this data a
-   dismissal is 5.0% of balls, a boundary is 7.4% of balls that are not dismissals,
-   and a scoring shot is 51.5% of the remaining balls (not boundaries, not
+   dismissal is 4.6% of balls, a boundary is 7.4% of balls that are not dismissals,
+   and a scoring shot is 51.6% of the remaining balls (not boundaries, not
    dismissals). The model builds every outcome in that order: first "is it a
    dismissal", then "is it a boundary", then "is it a scoring shot".
 3. **How much players differ** (the important table):
 
    ```
    | outcome                | batters            | bowlers           |
-   | boundary (per ball...) | 0.84 [0.65, 1.06]  | 0.21 [0.02, 0.46] |
+   | boundary (per ball...) | 0.83 [0.65, 1.06]  | 0.21 [0.03, 0.47] |
    ```
 
    These are SDs on the logit scale, with 90% brackets. Boundary hitting differs a
-   lot between batters (0.84, bracket well above zero) and hardly at all between
+   lot between batters (0.83, bracket well above zero) and hardly at all between
    bowlers (0.21, bracket touching zero): boundaries are a batter trait. Wickets
    and scoring shots differ modestly for both.
 4. **Ground and conditions**: how much a whole game's boundary and scoring rate
-   moves with the ground, the ball and the weather (0.27 and 0.30).
+   moves with the ground, the ball and the weather (0.26 and 0.30).
+5. **Our team's fielding edge** (new, 22 Sep 2026): how much our own fielding
+   (catches, run outs, general sharpness) adds to the dismissal log-odds on top of
+   the bowler's own effect, on the days we field. The 2025/26 estimate is 0.17
+   [-0.15, 0.47], shifting an average ball's dismissal chance from 4.6% to 5.4%.
+   The bracket still crosses zero (81% posterior probability the edge is positive),
+   so read this as a real, modest lean, not a settled fact. It only ever applies to
+   our own bowling, in the replay and totals-check tools; the batting-order
+   strategy comparison never simulates us bowling, so it never fires there,
+   though the bowler effects it was fitted alongside shift slightly too.
 
 ### 4.3 `ball_effects.csv`
 
@@ -326,25 +341,31 @@ A low percentile flags a day worth looking at; it is not a diagnosis.
 
 **Checked and holding up**
 
-- The models fit cleanly (R-hat 1.008, no divergences).
+- The models fit cleanly (R-hat 1.012, no divergences).
 - Out-of-sample, the boundary-rate differences between players are real and
   predictable (corr 0.76 to 0.81).
 - The U10 simulator reproduces the *opposition's* totals within a few percent
-  (0.98 to 1.04 of real) and the shape of an innings over by over.
+  (0.97 to 1.04 of real) and the shape of an innings over by over.
 - Event data reconcile exactly with the scorecards in 23 of 26 innings, and the
   4-run penalty rule holds in 25 of 26.
+- Adding the team fielding effect (section 4.2) moved the replay percentiles for
+  our totals from the 61st toward the 50th (now 59th), without fully closing it.
 
 **Known weaknesses**
 
-- The model is about 10% stingy about our own side and the replay percentiles for our
-  totals average about the 61st, not the 50th. A team-level effect (fielding, keeping,
-  coaching) is the most likely missing piece and is the next model change planned.
+- The model is still somewhat stingy about our own side (replay percentiles for
+  our totals average about the 59th, not the 50th). The fielding effect narrowed
+  this gap (it was the 61st) but did not close it; ball-count and position effects
+  are candidates for the rest, or it may just be the small sample.
 - Everything about U11 is an extrapolation from U10 skills: U11 boundaries are 45 m
   against 30 to 35 m, the ball may be heavier, and the players are a year older.
 - Only 10 players and 15 games (13 with ball-by-ball). Wide brackets on some players
   are the honest reflection of that.
-- Wicketkeepers are not modelled; the rule gives the two keepers one over each, so
-  bowling advice that ignores who keeps is unreliable.
+- Wicketkeepers are not individually modelled; PlayHQ's data does not record who
+  kept, only catches and run outs (now used, at a team level for the fielding
+  effect, and shown per player for interest, not fitted, in `player_report.md`).
+  The rule gives the two keepers one over each, so bowling advice that ignores who
+  keeps is still unreliable.
 - Bowling differences between players are small; do not over-read them.
 
 **Rules of thumb**

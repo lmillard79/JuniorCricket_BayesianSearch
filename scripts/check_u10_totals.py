@@ -135,10 +135,14 @@ def simulate_game(
             rotation = [p.name for p in rng.permutation(bowlers)]
             opp_bat = list(rng.permutation(opp[:n_opp_bat]))
             opp_bowl = {p.name: p for p in bowlers}
+        if outcomes is not None:
+            outcomes.set_fielding_ours(False)         # opposition bowls this innings
         ours_inn = simulate_innings_u10(
             ours["bat"], opp_bowl, rotation, allocation, rng,
             population_econ=priors.mu_econ, outcomes=outcomes,
             enforce_bowling_table=False)
+        if outcomes is not None:
+            outcomes.set_fielding_ours(True)          # we bowl this innings
         theirs_inn = simulate_innings_u10(
             opp_bat, ours["bowl"], ours["rotation"], ours["allocation"], rng,
             population_econ=priors.mu_econ, outcomes=outcomes,

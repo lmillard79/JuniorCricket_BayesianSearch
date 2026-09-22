@@ -13,14 +13,15 @@ OURS = [f"P{i}" for i in range(9)]
 THEIRS = [f"O{i}" for i in range(9)]
 
 
-def rule(boundary_day: float = 0.0) -> JointOutcomes:
+def rule(boundary_day: float = 0.0, fielding_mu: float = 0.0) -> JointOutcomes:
     zeros = {"d": 0.0, "b": 0.0, "s": 0.0}
     names = OURS + THEIRS
     return JointOutcomes(
         intercepts={"d": float(np.log(0.05 / 0.95)), "b": float(np.log(0.08 / 0.92)), "s": 0.0},
         bat={n: dict(zeros) for n in names}, bowl={n: dict(zeros) for n in names},
         bat_sd={"d": 0.3, "b": 0.8, "s": 0.4}, bowl_sd={"d": 0.3, "b": 0.2, "s": 0.4},
-        game_sd={"b": 0.25, "s": 0.3}, days={"g1": {"b": boundary_day, "s": 0.0}},
+        game_sd={"b": 0.25, "s": 0.3}, fielding_mu=fielding_mu, fielding_sd=0.0,
+        days={"g1": {"b": boundary_day, "s": 0.0}},
     )
 
 
@@ -157,6 +158,18 @@ def test_the_days_fitted_conditions_replace_a_typical_draw() -> None:
     typical = R.run_task(R.match_task(game(), 30, (5,), kind="bat"))["our_runs"].sum(axis=1)
     day = R.run_task(R.match_task(game(), 30, (5,), kind="bat", day=True))["our_runs"].sum(axis=1)
     assert day.mean() > typical.mean() + 50
+
+
+def test_the_fielding_edge_only_lifts_wickets_in_our_bowling_innings() -> None:
+    """A strong fielding edge boosts wickets when we bowl (their innings), not when we bat."""
+    R._init_worker([rule(fielding_mu=3.0)])
+    sims = R.run_task(R.match_task(game(), 30, (7,)))
+    their, ours = sims["their_wkts"].sum(axis=1), sims["our_wkts"].sum(axis=1)
+    assert their.mean() > ours.mean() + 20                             # we bowl their innings
+    R._init_worker([rule()])                                          # no edge: roughly level
+    level = R.run_task(R.match_task(game(), 30, (7,)))
+    their0, ours0 = level["their_wkts"].sum(axis=1), level["our_wkts"].sum(axis=1)
+    assert abs(their0.mean() - ours0.mean()) < 3
 
 
 def test_a_decision_study_screens_then_confirms_on_fresh_runs() -> None:

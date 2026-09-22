@@ -280,7 +280,7 @@ def build_game_rows(
 
 BALL_COLUMNS = [
     "date", "game_id", "batter", "bowler", "runs", "boundary",
-    "dismissed", "run_out", "over",
+    "dismissed", "run_out", "over", "fielder",
 ]
 
 
@@ -331,6 +331,14 @@ def build_ball_rows(
             if batter is None or bowler is None:
                 dropped += 1
                 continue
+            # The fielder credited with a catch or run out (the first
+            # name, for the rare assisted run out); the fielding side's
+            # alias space, same as the bowler. Empty when the dismissal
+            # has no separate fielder (bowled, stumped, hit wicket) or
+            # the named fielder could not be linked to a scorecard player.
+            fielder = ""
+            if delivery.fielders:
+                fielder = alias_of.get((bowl_key, delivery.fielders[0])) or ""
             rows.append({
                 "date": info.date,
                 "game_id": info.game_id,
@@ -344,6 +352,7 @@ def build_ball_rows(
                 # The scorer's over number (one-based), so an over with a
                 # missing ball stays aligned for over-by-over charts.
                 "over": delivery.over,
+                "fielder": fielder,
             })
     return rows, dropped
 

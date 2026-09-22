@@ -101,21 +101,21 @@ standard error.
 
 | Strategy | Mean total | Runs vs strongest to weakest | Share of worlds better |
 | --- | --- | --- | --- |
-| **bank top 4, recall on a cheap wicket** | **150.6** | **+1.3 ± 0.2** | **49%** |
-| strongest to weakest | 149.4 | 0 | n/a |
-| strong-middle alternating | 149.0 | -0.3 ± 0.3 | 48% |
-| balanced pairs (top six) | 148.5 | -0.8 ± 0.3 | 47% |
-| strong-weak alternating | 142.0 | -7.4 ± 0.4 | 36% |
-| weakest to strongest | 130.7 | -18.7 ± 0.5 | 24% |
-| random orders (12) | about 140 | -9.1 on average (-15.1 to -3.7) | n/a |
+| **bank top 4, recall on a cheap wicket** | **153.5** | **+1.4 ± 0.2** | **49%** |
+| strongest to weakest | 152.2 | 0 | n/a |
+| strong-middle alternating | 151.5 | -0.6 ± 0.3 | 48% |
+| balanced pairs (top six) | 150.9 | -1.2 ± 0.3 | 47% |
+| strong-weak alternating | 144.6 | -7.6 ± 0.4 | 36% |
+| weakest to strongest | 132.1 | -20.0 ± 0.5 | 22% |
+| random orders (12) | about 142 | -10.0 on average | n/a |
 
 **Findings**
 
 1. **Order matters under U11**, far more than under U10. Ignoring skill (a random order)
-   costs about 9 runs of a 149 total; leading with the weakest costs about 19.
+   costs about 10 runs of a 152 total; leading with the weakest costs about 20.
 2. **Among the fixed orders, the conventional one is not beaten by any alternative
    tried.** The swap search found no reordering that beats it, and across the grid no
-   fixed-order alternative beat it by more than 0.2 runs.
+   fixed-order alternative beat it by more than 0.4 runs.
 3. **Pairing a strong batter with a weak one loses runs.** Alternating strong and weak
    across the whole squad costs about 7 runs. Pairing only within the six batters who
    normally bat (balanced pairs) or top-third with middle-third (strong-middle) is close
@@ -125,15 +125,14 @@ standard error.
    "Bank top 4, recall on a cheap wicket" keeps the conventional order but lets the top
    four retire not out at 25 balls and come straight back in, strongest first, if
    whoever replaces them is out cheaply or quickly. It is the only alternative tried
-   that beat strongest to weakest, by 1.3 runs on average (about 6 standard errors, so
+   that beat strongest to weakest, by 1.4 runs on average (about 7 standard errors, so
    a real if modest effect), and it was the *best* alternative in all 37 scenarios
-   tested (main plus the 36-scenario grid), ranging from +0.7 to +7.4 runs. It helped
-   slightly more, not less, against the strongest third of opposition attacks (+1.8 vs
-   +1.2 against the weakest third), consistent with tougher attacks producing more of
-   the cheap wickets that trigger a recall.
+   tested (main plus the 36-scenario grid), ranging from +0.7 to +7.4 runs. It stayed
+   positive against every third of opposition attacks (+0.8 to +1.7), with no sign it
+   depends on how strong the attack is.
 5. **That gain is not obviously a participation win.** Balls faced per innings barely
-   move for most of the order, but the best batter gains about 2 balls (20.1 to 22.1)
-   and the weakest loses about 1 (5.3 to 4.1): a recalled top batter uses overs that
+   move for most of the order, but the best batter gains about 2 balls (20.4 to 22.5)
+   and the weakest loses about 1 (5.3 to 4.0): a recalled top batter uses overs that
    would otherwise eventually have reached the tail. If the coach's aim is specifically
    to guarantee the weakest batters more balls (rather than more team runs), this
    version of the policy is not that; a version that recalls to *protect the weakest*
@@ -144,8 +143,8 @@ standard error.
    of the fifth-best (7 balls), which is where the runs are lost. (`balls_by_rank.png`)
 7. **The "best batters miss the best bowlers" idea does not help a fixed order.**
    Splitting the worlds into thirds by how strong the opposition attack was, strong-weak
-   alternating loses about the same against the strongest attacks (-7.3 ± 0.6) as against
-   the weakest (-8.0 ± 0.7), and balanced pairs and strong-middle are within about a run
+   alternating loses about the same against the strongest attacks (-7.4 ± 0.6) as against
+   the weakest (-8.3 ± 0.7), and balanced pairs and strong-middle are within about a run
    of a tie in every third (`strategy_by_attack_strength.csv`). A smart attack (best
    bowlers open and bowl most overs) lowers every total by about 4 runs but does not
    change the ranking. Under this model, where batter and bowler effects add on the
@@ -176,7 +175,7 @@ standard error.
 | Skill transfer from U10 to U11 | Skills are U10 estimates; a year older and a bigger ground | Refit as U11 games arrive; drift is already in the grid |
 | Boundary size (45 m) | Boundary hitting is the strongest skill and drives the ranking | Measure the boundary rate in the first U11 games; it pins down the ground-shift dial |
 | Per-batter retirement | Confirmed allowed by the rules, though not yet used on the day | Done: "bank top 4, recall on a cheap wicket" in the engine and the comparison above |
-| Wicketkeepers and fielding | Not modelled; the model is about 10% stingy about our own side | Team fielding effect (design set; needs a refit; PROJECT_STATUS.md). Individual keeper flags exist in the data model but PlayHQ does not record who kept, so a real per-game signal would need the coach's own record of each game |
+| Wicketkeepers and fielding | The model was about 10% stingy about our own side | Team fielding effect done (22 Sep 2026): a real but modest edge, 0.17 [-0.15, 0.47] on the dismissal log-odds (81% posterior probability positive), narrowing the gap without closing it (PROJECT_STATUS.md). Individual catches and run outs are recorded per ball too (`player_report.md`'s Fielding table), but only 67 of 172 dismissals name a fielder, too few to fit a per-player effect. A true wicketkeeper flag would still need the coach's own per-game record; PlayHQ does not tag it |
 | Strike rotation | The engine changes ends only at the end of an over (per the 2026 rules); real practice may differ | Check balls per batter by position in U11 ball data |
 | In-innings form | Batters are modelled as constant within an innings | Compare runs per ball by balls faced in U11 data |
 | Extras | Wides and no-balls are not modelled (none were recorded in U10) | Add once U11 data shows their rate; it affects all strategies equally |
@@ -206,13 +205,13 @@ participation reasons the coach chooses, using the model's price for that choice
 ## 7. How this was validated so far (in-sample)
 
 Replaying the 12 full-length U10 games with the joint model, the recorded results sat
-above the model's median replay in 7 of 12 games for our total (average percentile 61st),
-6 of 12 for theirs (44th) and 9 of 12 for the margin (64th). A well-calibrated model would
-sit near the 50th. So the model is somewhat stingy about our side, consistent with the known
-gap of about 10% (a missing team fielding effect is the likeliest cause); it is well
-calibrated for the opposition. This does not affect the ranking of strategies (which is
-about our batters relative to each other) but it does affect absolute totals, and it is why
-the next model step is the team effect.
+above the model's median replay in 7 of 12 games for our total (average percentile 59th),
+7 of 12 for theirs (46th) and 9 of 12 for the margin (62nd). A well-calibrated model would
+sit near the 50th. The model is still somewhat stingy about our side, but less than before
+the team fielding effect was added (was 61st/44th/64th; PROJECT_STATUS.md): the effect is
+real but modest, so it narrows the gap rather than closing it. This does not affect the
+ranking of strategies (which is about our batters relative to each other) but it does affect
+absolute totals.
 
 ## 8. Decisions needed from you
 
@@ -227,18 +226,21 @@ Answered so far (2026-09-22):
    in finding 5: the runs-maximising version of this idea shifts a couple of balls *away*
    from the weakest batter, not toward them, so it is not yet a direct answer to the
    fairness half of the question.
-3. ~~Add the team fielding effect and wicketkeeper flags?~~ Yes, approved. Design in
-   PROJECT_STATUS.md; not yet built (needs a refit, which will move the headline numbers
-   above, so it is being kept as a separate step).
+3. ~~Add the team fielding effect and wicketkeeper flags?~~ Yes, approved, and built
+   (22 Sep 2026): the raw PlayHQ data turned out to name the fielder on catches and run
+   outs directly (checked properly this time, PROJECT_STATUS.md), so the fielding effect
+   uses that rather than a blanket team guess. It came out real but modest: 0.17
+   [-0.15, 0.47] on the dismissal log-odds, 81% posterior probability positive. It
+   narrows the "10% stingy on our side" gap without closing it.
 
 Still open:
 
 4. The 2026/27 U11 squad and any new players, so the comparison is run on the real group.
-5. Who keeps wicket, and can the choice change game to game? Needed if wicketkeeper flags are
-   to mean anything, since PlayHQ's data does not record it.
+5. Who keeps wicket, and can the choice change game to game? PlayHQ's data does not record
+   it, so a true keeper flag would need the coach's own per-game note.
 6. Is the runs-maximising bank-and-recall policy (finding 5) an acceptable trade against its
    fairness goal, or should a version that specifically protects the weakest batters' balls
-   be built instead, even if it costs a little more than +1.3 runs?
+   be built instead, even if it costs a little more than +1.4 runs?
 
 ## 9. How to reproduce
 

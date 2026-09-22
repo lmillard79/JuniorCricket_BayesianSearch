@@ -80,19 +80,21 @@ boundary result is clearly outside the noise.
 
 Each ball's probability of a dismissal, a boundary (given not out) and a
 scoring shot (given neither) depends on batter and bowler together, additively
-on the logit scale, plus a per-game effect on boundary and scoring. It fits
-cleanly: max R-hat 1.008, min ESS 608, no divergences.
+on the logit scale, plus a per-game effect on boundary and scoring, plus (new,
+22 Sep 2026) a per-game effect on dismissal specific to our own side's
+fielding (see below). It fits cleanly: max R-hat 1.012, min ESS 665, no
+divergences.
 
-Baseline (average batter vs average bowler): dismissal 0.051 per ball, boundary
-0.075 per non-dismissal ball, scoring shot 0.514 per non-boundary ball.
+Baseline (average batter vs average bowler): dismissal 0.046 per ball, boundary
+0.074 per non-dismissal ball, scoring shot 0.516 per non-boundary ball.
 
 Player spread (SD on the logit scale, median and 90% interval):
 
 | Outcome | Batters | Bowlers |
 | --- | --- | --- |
-| Dismissal | 0.39 [0.14, 0.62] | 0.31 [0.05, 0.56] |
-| Boundary | **0.84 [0.65, 1.07]** | 0.22 [0.02, 0.46] |
-| Scoring shot | 0.39 [0.27, 0.52] | **0.36 [0.23, 0.50]** |
+| Dismissal | 0.36 [0.10, 0.59] | 0.30 [0.06, 0.57] |
+| Boundary | **0.83 [0.65, 1.06]** | 0.21 [0.03, 0.47] |
+| Scoring shot | 0.38 [0.26, 0.52] | **0.36 [0.24, 0.50]** |
 
 Boundary hitting is a batter trait; bowlers differ in wicket-taking and in the
 scoring shots they concede. Ground and conditions vary game to game (boundary
@@ -101,25 +103,45 @@ batter effects add +26.6 log-score units for boundaries (+0.2 dismissal, +0.6
 scoring); bowler effects add a further +1.4, +1.1 and +2.7. Small but
 consistent.
 
+**Team fielding effect** (`ball_model.py`: `fielding_effects`, `mu_f_d`, `sf_d`,
+`field_d`; `JointOutcomes.set_fielding_ours`). Our own fielding (catches, run
+outs, general sharpness, on top of the bowler's own effect) adds **0.17
+[-0.15, 0.47]** to the dismissal log-odds, day-to-day spread 0.16 [0.02, 0.41].
+On an average ball that shifts the dismissal chance from 0.046 to 0.054.
+Posterior probability the edge is positive: **81%** — a real, modest lean, not
+a strong result; the 90% interval still crosses zero. Applies only when our
+bowlers are on (derived from the alias convention, `P0x` ours); the batting-
+order strategy comparison never simulates our own bowling, so this leaves
+those results unaffected in principle, though the bowler effects it was fit
+alongside shift slightly, which does move the strategy numbers a little (see
+below). Individual catches and run outs are also now recorded per ball
+(`playhq_scorebook.py`'s `fielder` column, from data `playhq_parse.py` was
+already parsing and linking but not carrying through) and reported
+descriptively, not fitted, in `player_report.py` (`fielding_credit_table`):
+PlayHQ's ball-by-ball feed names a fielder for only 67 of 172 dismissals in
+this data, too few to support a credible per-player estimate.
+
 ## U10 simulator check (in-sample; simulated / real)
 
-| Quantity | Per-player rates (13 games) | Joint, real opposition (13) | Joint, population opposition (14) |
+| Quantity | Per-player rates (13 games) | Joint, real opposition (13) | + fielding effect (13) |
 | --- | --- | --- | --- |
-| Our runs off the bat | 0.89 | 0.93 | 0.92 |
-| Opposition runs | 0.75 | **0.97** | **1.03** |
-| Wickets we took | 0.72 | 0.80 | 0.85 |
-| Wickets they took | 1.05 | 1.04 | 1.11 |
-| Our final total | 0.86 | 0.90 | 0.90 |
-| Opposition final total | 0.80 | **0.98** | **1.04** |
-| Margin | 1.01 (luck) | 0.65 | 0.50 |
+| Our runs off the bat | 0.89 | 0.93 | 0.93 |
+| Opposition runs | 0.75 | **0.97** | **0.97** |
+| Wickets we took | 0.72 | 0.80 | 0.83 |
+| Wickets they took | 1.05 | 1.04 | 0.99 |
+| Our final total | 0.86 | 0.90 | 0.91 |
+| Opposition final total | 0.80 | **0.98** | **0.97** |
+| Margin | 1.01 (luck) | 0.65 | 0.73 |
 
 The old model's totals were low because a bowler's economy and a batter's
 scoring were estimated separately and double-counted opposition quality; its
 margin was right only because errors cancelled. The joint model fixes the
-opposition side. It still understates White's own strength (our total 0.90 x,
-wickets we take 0.80 x), so the simulated margin is about half the real one.
-Likely cause: a team fielding effect (White's wickets exceed what its
-individual bowlers explain), plus possible ball-count and position effects.
+opposition side. Adding the fielding effect (22 Sep 2026) narrows the
+remaining gap without closing it: margin calibration moved from 0.65x to
+0.73x and wickets we take from 0.80x to 0.83x, and wickets they take from
+slightly over (1.04x) to almost exact (0.99x). White's own strength is still
+somewhat understated (our total 0.91x). Candidates for the rest of the gap:
+ball-count and position effects, or simply the small sample (13 games).
 
 ## Order stakes (joint model; U11 rules; indicative)
 
@@ -139,22 +161,24 @@ bowler of every over) and replayed 4,000 times, each replay drawing a fresh
 plausible set of player skills from the joint posterior (300 draws) and a typical
 ground. In-sample.
 
-* **Above or below the median?** Our recorded total was above the median replay
-  in 7 of 12 games (average percentile 61st); theirs in 6 of 12 (44th); the margin
-  in 9 of 12 (64th). A calibrated model sits near 50th, so the model is stingy
-  about our side (the known gap of about 10%); it is calibrated for the opposition.
-  Extremes: +116 recorded margin against a replay median of +41 (100th
-  percentile) on 2025-10-18, and -35 against +10 (6th) on 2026-01-31.
-* **Luck.** A single game's margin has a spread (1 SD) of about 28 runs with the
+* **Above or below the median?** Re-run 22 Sep 2026 with the fielding-effect
+  posterior. Our recorded total was above the median replay in 7 of 12 games
+  (average percentile 59th, was 61st); theirs in 7 of 12 (46th, was 44th); the
+  margin in 9 of 12 (62nd, was 64th). A calibrated model sits near 50th, so all
+  three moved slightly toward calibrated, consistent with the fielding effect
+  narrowing (not closing) the gap on our side. Extremes: +116 recorded margin
+  against a replay median of +43 (98th percentile) on 2025-10-18, and -35
+  against +13 (5th) on 2026-01-31.
+* **Luck.** A single game's margin has a spread (1 SD) of about 29 runs with the
   lineups fixed.
 * **Batting order.** Best of 40 random and 4 rule-of-thumb orders, screened on
-  2,000 replays and judged on 10,000 fresh ones: **+0.8 runs** of margin on average
-  (95% interval about +0.6 to +1.0). Random orders differ by only about 0.4 runs
+  2,000 replays and judged on 10,000 fresh ones: **+0.9 runs** of margin on average
+  (95% interval about +0.7 to +1.1). Random orders differ by only about 0.4 runs
   (SD, corrected for simulation noise).
 * **Bowling split** (same overs, same bowlers, different shares; round-robin
-  sequence): **+0.7 runs** with the two keepers left as played; **+3.0** if the
+  sequence): **+0.7 runs** with the two keepers left as played; **+2.8** if the
   keepers could also be chosen freely, which is optimistic because keeper skill is
-  not modelled. Random reassignments differ by about 0.8 runs (SD).
+  not modelled. Random reassignments differ by about 0.6 runs (SD).
 * **Together** the best batting order and bowling split found would have added
   about 0.18 expected wins across the 12 games.
 * **Shape of an innings.** Averaged over the games, recorded runs per over run above
@@ -173,15 +197,16 @@ strategy is played through the same thousands of worlds (true skills drawn from
 the posterior, nine unknown opposition players from the grade, random or smart
 tactics, ground), so differences are paired; a swap search is judged on fresh worlds.
 
-Main scenario (retire at 35, U10 boundary rates, random attack), runs against
-strongest to weakest: strong-middle alternating -0.3 ± 0.3, balanced pairs (top
-six) -0.8 ± 0.4, strong-weak alternating -7.4 ± 0.4, weakest to strongest
--18.7 ± 0.5, random orders -9.1 on average. The swap search found nothing better
+Main scenario (retire at 35, U10 boundary rates, random attack; refit 22 Sep 2026
+with the fielding effect, replacing the figures this superseded), runs against
+strongest to weakest: strong-middle alternating -0.6 ± 0.3, balanced pairs (top
+six) -1.2 ± 0.3, strong-weak alternating -7.6 ± 0.4, weakest to strongest
+-20.0 ± 0.5, random orders -10.0 on average. The swap search found nothing better
 than strongest to weakest, and among these *fixed orders*, none of the 35 other
 scenarios (retirement 25, 30 or 35; boundary shift 0, -0.7, -1.4; skill drift 0 or
-0.3; random or smart attack) found an alternative order beating it by more than 0.2
+0.3; random or smart attack) found an alternative order beating it by more than 0.4
 runs. Split by opposition attack strength (thirds of the worlds), strong-weak
-alternating loses -7.3 ± 0.6 against the strongest attacks and -8.0 ± 0.7 against
+alternating loses -7.4 ± 0.6 against the strongest attacks and -8.3 ± 0.7 against
 the weakest, so pairing does not shield the best batters from the best bowling. The
 mechanism is who gets the balls: the six best batters face 17 to 20 balls each
 under the conventional order.
@@ -198,16 +223,17 @@ the user's own framing of the policy: the top 4 batters may retire not out at 25
 balls instead of batting on; the strongest currently-banked batter is recalled
 immediately, ahead of the next fresh batter, if whoever comes in next is out within
 6 balls or for under 5 runs (both thresholds are illustrative defaults, not fitted).
-Result: **+1.3 ± 0.2 runs** against strongest to weakest in the main scenario, and
+Result: **+1.4 ± 0.2 runs** against strongest to weakest in the main scenario, and
 the best alternative in **all 37 scenarios tested** (main plus the 36-scenario
-grid), ranging +0.7 to +7.4. It helped slightly more against the strongest third
-of opposition attacks (+1.8) than the weakest (+1.2). Balls-by-rank shows the gain
-comes from the best batter facing about 2 more balls (20.1 to 22.1) at the expense
-of about 1 fewer for the weakest (5.3 to 4.1): the runs-maximising version of the
-policy is not, by itself, a direct answer to "everyone should get a go"; a
-fairness-weighted recall rule (protect the weakest batters' balls rather than
-maximise runs) has not been built. Retiring *every* batter at 25 rather than 35
-(no bankable subset) still costs about 5 runs at the current ground size.
+grid), ranging +0.7 to +7.4. It stayed positive against every third of opposition
+attacks (+0.8 to +1.7), with no sign it depends on how strong the attack is.
+Balls-by-rank shows the gain comes from the best batter facing about 2 more balls
+(20.4 to 22.5) at the expense of about 1 fewer for the weakest (5.3 to 4.0): the
+runs-maximising version of the policy is not, by itself, a direct answer to
+"everyone should get a go"; a fairness-weighted recall rule (protect the weakest
+batters' balls rather than maximise runs) has not been built. Retiring *every*
+batter at 25 rather than 35 (no bankable subset) still costs about 5 runs at the
+current ground size.
 
 **Team fielding effect: design, not yet built.** The user approved adding this
 (22 Sep 2026) but has no view on mechanism. Plan: `ball_model.py`'s joint model

@@ -21,7 +21,7 @@ from pathlib import Path
 import arviz as az
 import pandas as pd
 
-from junior_cricket.ball_model import player_profiles
+from junior_cricket.ball_model import fielding_credit_table, player_profiles
 from junior_cricket.logging_setup import setup_logging
 from junior_cricket.playhq_scorebook import alias_names, translate_aliases
 
@@ -79,6 +79,19 @@ def main() -> None:
             f"{r.wickets_hi:.2f}] | {r.runs_conceded:.2f} | {r.bowling_edge:+.2f} |")
     lines += ["", "Bowling edge counts each wicket as 4 runs plus the runs saved. "
               "Bowlers differ less than batters, so read small gaps as noise."]
+
+    balls_path = PROCESSED_DIR / "playhq_balls.csv"
+    if balls_path.exists():
+        credit = fielding_credit_table(pd.read_csv(balls_path, dtype={"fielder": str}))
+        credit = credit[credit["player"].isin(squad)]
+        lines += ["", "## Fielding", "",
+                  "Catches and run outs actually credited to each player in the ball-by-ball "
+                  "data, a count for interest, not a fitted skill (a handful of events per "
+                  "player is too little to model, and most dismissals name no fielder at "
+                  "all). Players with none are not listed.", "",
+                  "| player | catches | run outs | total |", "| --- | --- | --- | --- |"]
+        for r in credit.itertuples():
+            lines.append(f"| {r.player} | {r.catches} | {r.run_outs} | {r.total} |")
     text = "\n".join(lines) + "\n"
     (OUTPUT_DIR / "player_report.md").write_text(text, encoding="utf-8")
     logger.info("Report: %s", OUTPUT_DIR / "player_report.md")

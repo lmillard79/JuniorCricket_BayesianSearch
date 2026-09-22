@@ -296,9 +296,11 @@ def run_task(task: Task) -> Dict[str, np.ndarray]:
         else:
             outcomes.begin_game(rng)
         if want_ours:
+            outcomes.set_fielding_ours(False)         # they bowl this innings
             inn = play_innings(outcomes, task.our_bat, task.their_overs, rng)
             out["our_runs"][k], out["our_wkts"][k] = inn.over_runs, inn.over_wickets
         if want_theirs:
+            outcomes.set_fielding_ours(True)          # we bowl this innings
             inn = play_innings(outcomes, task.their_bat, task.our_overs, rng)
             out["their_runs"][k], out["their_wkts"][k] = inn.over_runs, inn.over_wickets
     return out

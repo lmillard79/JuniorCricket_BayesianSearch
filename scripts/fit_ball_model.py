@@ -60,6 +60,7 @@ def main() -> None:
     idata = fit_ball_model(data, draws=args.draws, tune=args.tune, seed=20260921)
 
     scalars = [f"{p}_{c}" for c in COMPONENTS for p in ("a", "sb", "sw")] + ["sg_b", "sg_s"]
+    scalars += [v for v in ("mu_f_d", "sf_d") if v in idata.posterior]
     summary = az.summary(idata, var_names=scalars)
     divergences = int(np.asarray(idata.sample_stats["diverging"]).sum())
     logger.info("Diagnostics: max R-hat %.3f, min bulk ESS %.0f, divergences %d",
@@ -90,6 +91,22 @@ def main() -> None:
                      f"{_interval(_flat(idata, 'sw_' + c))} |")
     lines += ["", f"Ground and conditions (per game): boundary "
               f"{_interval(_flat(idata, 'sg_b'))}, scoring {_interval(_flat(idata, 'sg_s'))}."]
+    if "mu_f_d" in idata.posterior:
+        mu_f = _flat(idata, "mu_f_d")
+        base_d = inv(_flat(idata, "a_d"))
+        with_field = inv(_flat(idata, "a_d") + mu_f)
+        share_positive = float((mu_f > 0).mean())
+        lines += [
+            "", "## Our team's fielding edge",
+            "",
+            f"Our own fielding (catches, run outs, general sharpness) adds "
+            f"{_interval(mu_f)} to the dismissal log-odds on top of the bowler's own "
+            f"effect, day to day spread {_interval(_flat(idata, 'sf_d'))}. On an average "
+            f"ball that shifts the dismissal chance from {base_d.mean():.3f} to "
+            f"{with_field.mean():.3f}. Posterior probability the edge is positive: "
+            f"{share_positive:.0%}. Descriptive, not fitted: catches and run outs credited "
+            f"to individual fielders (`fielding_credit_table`) are not part of this model.",
+        ]
     (OUTPUT_DIR / "ball_model_summary.md").write_text("\n".join(lines), encoding="utf-8")
     logger.info("Summary: %s", OUTPUT_DIR / "ball_model_summary.md")
     print("\n".join(lines))
