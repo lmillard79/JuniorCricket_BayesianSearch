@@ -37,6 +37,15 @@ U11 = PlayingConditions(
         7: [5, 5, 5, 4, 4, 1, 1],
     },
     batting_ball_allotments={},
+    # 17.4(iv): batters bat from one end, rotate at the end of each over and
+    # "run from popping crease to popping crease". The first U11 ball-by-ball
+    # game (10 Oct 2026) agrees: the striker changed after 30 of 33 odd-run
+    # balls and after 4 of 138 other balls, and a new batter faced the next
+    # ball after a wicket in 6 of the 8 clear cases. Earlier versions of the
+    # engine rotated at the end of the over only; set both to False to
+    # reproduce them.
+    batters_cross_on_runs=True,
+    incoming_batter_takes_strike=True,
 )
 
 U11.validate()

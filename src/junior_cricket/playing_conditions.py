@@ -45,6 +45,14 @@ class PlayingConditions:
         batting_ball_allotments: Team size -> per-player ball
             allotments (U10 only); empty for U11 (retirement rules
             govern ball caps instead).
+        batters_cross_on_runs: True when the batters change ends on an
+            odd number of runs, on top of rotating at the end of every
+            over. BNJCA 17.4(iv) has them "run from popping crease to
+            popping crease" while batting from one end only. False
+            rotates strike at the end of the over and nowhere else.
+        incoming_batter_takes_strike: True when a new batter faces the
+            next ball after the striker is out (the usual convention);
+            False has the surviving batter face it.
     """
 
     age_group: str
@@ -64,6 +72,8 @@ class PlayingConditions:
     pitch_length_m: int
     bowling_allocations: Dict[int, List[int]] = field(default_factory=dict)
     batting_ball_allotments: Dict[int, List[int]] = field(default_factory=dict)
+    batters_cross_on_runs: bool = False
+    incoming_batter_takes_strike: bool = False
 
     def validate(self) -> None:
         """Check internal consistency of the encoded conditions.

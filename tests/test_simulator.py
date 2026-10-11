@@ -319,3 +319,100 @@ def test_recall_threshold_without_bankable_rejected() -> None:
             rng=np.random.default_rng(6),
             recall_within_balls=6,
         )
+
+
+class ScriptedOutcomes:
+    """Deterministic ball outcomes that also record who faced each fair ball."""
+
+    def __init__(self, out_names=(), runs: int = 1) -> None:
+        self.out_names = set(out_names)
+        self.runs_per_ball = runs
+        self.strikers: List[str] = []
+
+    def dismissal_probability(self, striker, bowler) -> float:
+        self.strikers.append(striker.name)
+        return 1.0 if striker.name in self.out_names else 0.0
+
+    def runs(self, striker, bowler, rng):
+        return self.runs_per_ball, False
+
+
+def _play_scripted(outcomes, conditions=U11, **kwargs):
+    """Run an innings of uniform batters with no extras and the scripted outcomes."""
+    skills = make_skills(p_extra=0.0, keepers=())
+    fielding = {p.name: p for p in skills}
+    return simulate_innings(
+        batting_skills=skills,
+        bowling_skills=fielding,
+        bowling_rotation=[p.name for p in skills],
+        bowling_allocation=standard_allocation(skills),
+        rng=np.random.default_rng(0),
+        conditions=conditions,
+        outcomes=outcomes,
+        **kwargs,
+    )
+
+
+def test_u11_conditions_encode_the_observed_strike_rules() -> None:
+    """17.4(iv) and the first U11 game: batters cross, a new batter takes strike."""
+    assert U11.batters_cross_on_runs
+    assert U11.incoming_batter_takes_strike
+
+
+def test_batters_swap_ends_on_odd_runs_and_again_at_the_end_of_the_over() -> None:
+    """A single sends the other batter on strike; the over then rotates them as well."""
+    outcomes = ScriptedOutcomes(runs=1)
+    _play_scripted(outcomes)
+    # Ball 6 is a single by P1, who crosses; the end of the over rotates
+    # again, so P1 also faces the first ball of the next over.
+    assert outcomes.strikers[:12] == ["P0", "P1", "P0", "P1", "P0", "P1",
+                                      "P1", "P0", "P1", "P0", "P1", "P0"]
+
+
+def test_without_crossing_strike_changes_only_at_the_end_of_the_over() -> None:
+    """The earlier engine: each batter faces whole overs regardless of the runs."""
+    import dataclasses
+
+    outcomes = ScriptedOutcomes(runs=1)
+    _play_scripted(outcomes, conditions=dataclasses.replace(U11, batters_cross_on_runs=False))
+    assert outcomes.strikers[:18] == ["P0"] * 6 + ["P1"] * 6 + ["P0"] * 6
+
+
+def test_even_runs_do_not_change_the_striker_within_an_over() -> None:
+    """Dots, twos and boundaries leave the same batter on strike until the over ends."""
+    outcomes = ScriptedOutcomes(runs=2)
+    _play_scripted(outcomes)
+    assert outcomes.strikers[:12] == ["P0"] * 6 + ["P1"] * 6
+
+
+def test_new_batter_takes_strike_after_the_striker_is_out(monkeypatch) -> None:
+    """With the usual convention the incoming batter, not the survivor, faces next."""
+    monkeypatch.setattr("junior_cricket.simulator.RUN_OUT_SHARE", 0.0)
+    outcomes = ScriptedOutcomes(out_names={"P0"}, runs=0)
+    _play_scripted(outcomes)
+    assert outcomes.strikers[:2] == ["P0", "P2"]
+
+
+def test_survivor_faces_next_when_the_incoming_batter_rule_is_off(monkeypatch) -> None:
+    """The earlier engine: the batter at the other end faces, the new one waits."""
+    import dataclasses
+
+    monkeypatch.setattr("junior_cricket.simulator.RUN_OUT_SHARE", 0.0)
+    outcomes = ScriptedOutcomes(out_names={"P0"}, runs=0)
+    _play_scripted(
+        outcomes,
+        conditions=dataclasses.replace(U11, incoming_batter_takes_strike=False),
+    )
+    assert outcomes.strikers[:2] == ["P0", "P1"]
+
+
+def test_batter_who_has_crossed_retires_from_the_non_strikers_end() -> None:
+    """A retiring batter is replaced where they stand, not where they faced from."""
+    outcomes = ScriptedOutcomes(runs=1)
+    result = _play_scripted(outcomes, retire_at_balls=25)
+    # P0 faces the odd balls and reaches 25 on ball 49, then crosses and retires
+    # as the non-striker: P1 still faces ball 50, and the replacements follow.
+    assert outcomes.strikers[48:52] == ["P0", "P1", "P2", "P3"]
+    cards = {c.name: c for c in result.batter_cards}
+    assert cards["P0"].retired and cards["P0"].balls == 25
+    assert cards["P1"].retired and cards["P1"].balls == 25

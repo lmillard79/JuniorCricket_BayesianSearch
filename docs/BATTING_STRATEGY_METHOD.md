@@ -91,23 +91,32 @@ is a dial, not a fact. The scenario grid varies:
 
 That is 36 scenarios. A conclusion only counts if it survives the grid.
 
+Three more dials were added on 11 Oct 2026, after the first U11 game, and are held fixed
+across the grid by command-line options: the **strike rules** (`--strike-rules`), a
+**scoring shift** on the log-odds that a non-boundary ball scores (`--scoring-shift`) and an
+**extras rate**, the chance a delivery is a wide or no-ball (`--extras-rate`). Section 4b
+uses them to describe a "U11-like" world.
+
 ## 4. What the pilot says
 
-Squad: the nine 2025/26 players ranked by the model; U10 skills. Main scenario: retire at
-35, no ground shift, no drift, random attack. The named strategies were played through
-4,000 fresh worlds x 2 innings each (the swap search was tuned on a separate 3,000);
-the random orders used a separate 6,000. All comparisons are paired; the ± is one
-standard error.
+Squad: the nine 2025/26 players ranked by the model; U10 skills and U10 scoring rates.
+Main scenario: retire at 35, no ground shift, no drift, random attack. The named
+strategies were played through 4,000 fresh worlds x 2 innings each (the swap search was
+tuned on a separate 3,000); the random orders used a separate 6,000. All comparisons are
+paired; the ± is one standard error. Figures are with the strike rules corrected on
+11 Oct 2026 (batters cross on odd runs, a new batter takes strike after a wicket;
+section 4b). They moved by at most half a run from the first pilot, which rotated strike
+at the end of the over only, and nothing changed sign or rank.
 
 | Strategy | Mean total | Runs vs strongest to weakest | Share of worlds better |
 | --- | --- | --- | --- |
-| **bank top 4, recall on a cheap wicket** | **153.5** | **+1.4 ± 0.2** | **49%** |
-| strongest to weakest | 152.2 | 0 | n/a |
-| strong-middle alternating | 151.5 | -0.6 ± 0.3 | 48% |
-| balanced pairs (top six) | 150.9 | -1.2 ± 0.3 | 47% |
-| strong-weak alternating | 144.6 | -7.6 ± 0.4 | 36% |
-| weakest to strongest | 132.1 | -20.0 ± 0.5 | 22% |
-| random orders (12) | about 142 | -10.0 on average | n/a |
+| **bank top 4, recall on a cheap wicket** | **153.1** | **+1.3 ± 0.2** | **48%** |
+| strongest to weakest | 151.8 | 0 | n/a |
+| strong-middle alternating | 151.6 | -0.2 ± 0.3 | 49% |
+| balanced pairs (top six) | 150.6 | -1.2 ± 0.4 | 46% |
+| strong-weak alternating | 143.9 | -7.9 ± 0.4 | 35% |
+| weakest to strongest | 131.9 | -19.9 ± 0.4 | 22% |
+| random orders (12) | about 142 | -9.6 on average | n/a |
 
 **Findings**
 
@@ -115,70 +124,142 @@ standard error.
    costs about 10 runs of a 152 total; leading with the weakest costs about 20.
 2. **Among the fixed orders, the conventional one is not beaten by any alternative
    tried.** The swap search found no reordering that beats it, and across the grid no
-   fixed-order alternative beat it by more than 0.4 runs.
+   fixed-order alternative beat it by more than 0.5 runs.
 3. **Pairing a strong batter with a weak one loses runs.** Alternating strong and weak
-   across the whole squad costs about 7 runs. Pairing only within the six batters who
+   across the whole squad costs about 8 runs. Pairing only within the six batters who
    normally bat (balanced pairs) or top-third with middle-third (strong-middle) is close
-   to a tie (under 1 run). There is no sign that pairing spreads risk in a way that
+   to a tie (about a run or less). There is no sign that pairing spreads risk in a way that
    helps.
 4. **Changing the retirement tactics, not the order, is what actually gains runs.**
    "Bank top 4, recall on a cheap wicket" keeps the conventional order but lets the top
    four retire not out at 25 balls and come straight back in, strongest first, if
    whoever replaces them is out cheaply or quickly. It is the only alternative tried
-   that beat strongest to weakest, by 1.4 runs on average (about 7 standard errors, so
+   that beat strongest to weakest, by 1.3 runs on average (about 6 standard errors, so
    a real if modest effect), and it was the *best* alternative in all 37 scenarios
-   tested (main plus the 36-scenario grid), ranging from +0.7 to +7.4 runs. It stayed
-   positive against every third of opposition attacks (+0.8 to +1.7), with no sign it
+   tested (main plus the 36-scenario grid), ranging from +0.7 to +7.8 runs. It stayed
+   positive against every third of opposition attacks (+1.1 to +1.7), with no sign it
    depends on how strong the attack is.
 5. **That gain is not obviously a participation win.** Balls faced per innings barely
-   move for most of the order, but the best batter gains about 2 balls (20.4 to 22.5)
-   and the weakest loses about 1 (5.3 to 4.0): a recalled top batter uses overs that
+   move for most of the order, but the best batter gains about 2 balls (20.5 to 22.3)
+   and the weakest loses about 1 (5.4 to 4.4): a recalled top batter uses overs that
    would otherwise eventually have reached the tail. If the coach's aim is specifically
    to guarantee the weakest batters more balls (rather than more team runs), this
    version of the policy is not that; a version that recalls to *protect the weakest*
    rather than *maximise runs* would need a different recall rule and has not been built.
 6. **The mechanism for the fixed orders is who gets the balls.** In the conventional
    order the six best batters face 17 to 20 balls each and the three weakest 5 to 12.
-   The alternating order pushes 13 to 15 balls onto the weakest batters at the expense
+   The alternating order pushes 14 to 15 balls onto the weakest batters at the expense
    of the fifth-best (7 balls), which is where the runs are lost. (`balls_by_rank.png`)
 7. **The "best batters miss the best bowlers" idea does not help a fixed order.**
    Splitting the worlds into thirds by how strong the opposition attack was, strong-weak
-   alternating loses about the same against the strongest attacks (-7.4 ± 0.6) as against
-   the weakest (-8.3 ± 0.7), and balanced pairs and strong-middle are within about a run
+   alternating loses about the same against the strongest attacks (-8.7 ± 0.6) as against
+   the weakest (-7.6 ± 0.7), and balanced pairs and strong-middle are within about a run
    of a tie in every third (`strategy_by_attack_strength.csv`). A smart attack (best
-   bowlers open and bowl most overs) lowers every total by about 4 runs but does not
+   bowlers open and bowl most overs) lowers every total by about 6 runs but does not
    change the ranking. Under this model, where batter and bowler effects add on the
    logit scale, there is little matchup to exploit even if the attack were known.
 8. **The ranking is robust.** Across retirement policy, ground size, drift and opposition
    tactics the order of strategies never changed, and bank-and-recall stayed on top
    throughout. Bigger boundaries shrink the penalty for a poor fixed order (averaged
-   over the retirement policies, leading with the weakest costs about 13 runs at no
-   shift and about 7 at a -1.4 shift), presumably because boundary hitting is where
+   over the retirement policies and the other dials, leading with the weakest costs about
+   15 runs at no shift and about 7 at a -1.4 shift), presumably because boundary hitting is where
    batters differ most and a bigger ground removes many boundaries.
 9. **A blanket retirement policy moves totals as much as most order choices.** With the
    same order and the current ground size, retiring *every* batter at 25 rather than 35
-   balls costs about 5 runs (less on a bigger ground), because the best batters are taken
+   balls costs about 6 runs (less on a bigger ground), because the best batters are taken
    off too. Bank-and-recall is the per-batter alternative to that blanket policy: only the
    top four retire early, and only long enough to see off a cheap wicket.
 10. **What a participation guarantee costs, if runs are what matters.** The order that
-    guarantees the weakest three at least 13 balls each (strong-weak alternating) costs
-    about 7 runs, roughly 5% of a total. That is a coaching choice about fairness, not
+    guarantees the weakest three at least 14 balls each (strong-weak alternating) costs
+    about 8 runs, roughly 5% of a total. That is a coaching choice about fairness, not
     something the model can decide, but the model can now put a price on it, and
     bank-and-recall shows that a *different* kind of fairness lever (giving the coach the
     retirement choice) does not have to cost runs at all, even though this particular
     version of it does not target fairness for the weakest batters specifically.
+
+## 4b. After the first U11 game (Round 1, Sat 10 Oct 2026)
+
+Navy v Orange (Hartley pool) came through PlayHQ complete, with ball-by-ball for both
+innings: 223 fair balls, Navy 142/7 in 25 overs against Orange 56/8, all out in 14.1.
+White's game against Turquoise (Smith pool, cut to 22 overs a side) has only the team
+totals on PlayHQ so far, 131/4 against 91/7, so it says nothing about individual batters.
+**This is one game between two sides: a first look to test the model's assumptions against,
+not an estimate.**
+
+**1. The engine's strike rule was wrong, and the fix barely matters.** The engine rotated
+strike only at the end of the over. Rule 17.4(iv) has batters bat from one end, rotate at the
+end of each over *and* "run from popping crease to popping crease", so they also cross on odd
+runs. The game agrees: the striker changed after 30 of 33 odd-run balls and after 4 of 138
+other balls inside an over, and standard crossing predicts 94% of striker identities against
+80% for rotating at the over's end only. After a wicket the incoming batter faced the next
+ball in 6 of the 8 clear cases (the engine had the surviving batter face it). Both are now
+on the U11 playing conditions (`batters_cross_on_runs`, `incoming_batter_takes_strike`),
+tested, and switchable (`--strike-rules earlier` reproduces the first pilot exactly). Main
+scenario, runs against strongest to weakest, at the same U10 scoring rates:
+
+| Strike rules | bank top 4 | strong-weak alternating | weakest to strongest |
+| --- | --- | --- | --- |
+| earlier (end of over only) | +1.4 ± 0.2 | -7.6 ± 0.4 | -20.0 ± 0.4 |
+| crossing only | +1.6 ± 0.2 | -7.5 ± 0.4 | -19.4 ± 0.4 |
+| crossing and new batter takes strike (now the default) | +1.3 ± 0.2 | -7.9 ± 0.4 | -19.9 ± 0.4 |
+
+Across all 37 scenarios bank-and-recall stays best in every one, and strong-weak alternating
+stays worse in every one.
+
+**2. U11 scoring looks quite different from U10.** Navy's first U11 game against Navy's own
+2,668 U10 balls, on the model's own logit scale (median and 90% interval, from a Beta
+posterior on one game):
+
+| Quantity | U10 (Navy) | U11 Round 1 | Shift |
+| --- | --- | --- | --- |
+| Dismissal, per fair ball | 6.2% | 6.7% | +0.12 [-0.34, +0.53] |
+| Boundary, per ball not out | 12.7% | 9.1% | -0.34 [-0.75, +0.03] |
+| Scoring shot, per non-boundary ball not out | 48.2% | 23.8% | **-1.08 [-1.37, -0.80]** |
+| Wide or no-ball, per delivery | 6.8% | 18.3% [14.8%, 22.5%] | n/a |
+
+Dismissals are unchanged and boundaries are a bit rarer (inside the grid's 0 to -0.7), but
+far fewer balls are worked for runs: dot balls rose from 42% to 65% of balls, and extras were
+54 of Navy's 142. One plausible reason, not tested, is that a dismissal now ends a batter's
+innings (in U10 the batter carried on at a four-run cost), so batters run less. Neither the
+scoring-shot rate nor the extras rate was a dial before; the strategy simulations had no
+wides at all.
+
+**3. The conclusions in a "U11-like" world.** `--boundary-shift -0.3 --scoring-shift -1.1
+--extras-rate 0.18` (the grid still sweeps its own boundary shift). The squad's mean total
+falls from 152 to 129 (the four real Round 1 innings averaged 105, from 56 to 142, with 5.9
+simulated wickets against 6.5 real), and:
+
+| Strategy | Mean total | U11-like: runs vs strongest to weakest | U10-like (section 4) |
+| --- | --- | --- | --- |
+| **bank top 4, recall on a cheap wicket** | **132.2** | **+3.3 ± 0.2** | +1.3 |
+| strongest to weakest | 128.9 | 0 | 0 |
+| strong-middle alternating | 128.7 | -0.2 ± 0.3 | -0.2 |
+| balanced pairs (top six) | 128.1 | -0.8 ± 0.3 | -1.2 |
+| strong-weak alternating | 124.0 | -4.9 ± 0.3 | -7.9 |
+| weakest to strongest | 116.7 | -12.2 ± 0.4 | -19.9 |
+| random orders (12) | | -6.0 on average | -9.6 |
+
+Across the 37 scenarios: bank-and-recall is best in all 37 (+4.5 on average, +2.1 to +7.9);
+strong-weak alternating is worse in all 37 (-2.9 on average); no fixed-order alternative
+beats the conventional order by more than 0.5 runs. So **the ranking does not change, the
+penalties for reordering shrink (singles are rarer, so order decides fewer balls), and
+bank-and-recall is worth more.** Two cautions: its thresholds (out within 6 balls or for under
+5 runs) were set for U10 scoring, where 5 runs was cheap; at U11 scoring they fire on most weak
+dismissals and are worth re-tuning. And the participation cost grows: the best batter gains
+4 balls (23.1 to 27.3) and the weakest loses 3 (8.1 to 5.4).
 
 ## 5. What would change the answer
 
 | Uncertainty | Why it matters | How we will find out |
 | --- | --- | --- |
 | Skill transfer from U10 to U11 | Skills are U10 estimates; a year older and a bigger ground | Refit as U11 games arrive; drift is already in the grid |
-| Boundary size (45 m) | Boundary hitting is the strongest skill and drives the ranking | Measure the boundary rate in the first U11 games; it pins down the ground-shift dial |
+| Boundary size (45 m) | Boundary hitting is the strongest skill and drives the ranking | First U11 game: shift -0.34 [-0.75, +0.03] (section 4b), inside the grid's 0 to -0.7; more games will narrow it |
 | Per-batter retirement | Confirmed allowed by the rules, though not yet used on the day | Done: "bank top 4, recall on a cheap wicket" in the engine and the comparison above |
 | Wicketkeepers and fielding | The model was about 10% stingy about our own side | Team fielding effect done (22 Sep 2026): a real but modest edge, 0.17 [-0.15, 0.47] on the dismissal log-odds (81% posterior probability positive), narrowing the gap without closing it (PROJECT_STATUS.md). Individual catches and run outs are recorded per ball too (`player_report.md`'s Fielding table), but only 67 of 172 dismissals name a fielder, too few to fit a per-player effect. A true wicketkeeper flag would still need the coach's own per-game record; PlayHQ does not tag it |
-| Strike rotation | The engine changes ends only at the end of an over (per the 2026 rules); real practice may differ | Check balls per batter by position in U11 ball data |
+| Strike rotation | The engine changed ends only at the end of the over | Done (11 Oct 2026): rule 17.4(iv) and the first U11 game both have batters crossing on odd runs and a new batter taking strike after a wicket; engine fixed, conclusions unchanged (section 4b) |
 | In-innings form | Batters are modelled as constant within an innings | Compare runs per ball by balls faced in U11 data |
-| Extras | Wides and no-balls are not modelled (none were recorded in U10) | Add once U11 data shows their rate; it affects all strategies equally |
+| Scoring shots | The first U11 game had 24% of non-boundary balls scoring against 48% in U10; one game | Dial added (`--scoring-shift`); the U11-like world uses -1.1 (section 4b); refit with a U11 offset as games arrive |
+| Extras | Wides and no-balls were not modelled (none were recorded in White's U10 feed) | Dial added (`--extras-rate`); the first U11 game had 18% [15%, 22%] of deliveries, and they count toward the 25 and 35-ball limits |
 | Small sample | 10 players, 15 games | Brackets are honest about it; U11 data adds to it |
 
 A caution on validation. A season of about 15 games can never *directly* show a 1 to 3 run
@@ -193,8 +274,9 @@ from.
 | When | What | Output |
 | --- | --- | --- |
 | Done (22 Sep 2026) | Joint ball model; U10 and U11 engines; U10 replay validation; strategy harness with paired worlds, search and stress grid; pilot results above; per-batter bank-and-recall retirement policy in the engine and comparison | This document, `replay_report.html`, `strategy_report.html` |
-| Before Round 1 (Sat 10 Oct 2026) | Add the team fielding effect to the joint model and re-check calibration; wicketkeeper flags if a real per-game signal can be sourced; load the U11 squad (new players get the grade prior); rerun the replay and strategy comparison for the actual squad | A pre-season recommendation with ranges, and a list of the assumptions it rests on |
-| Rounds 1 to 4 | After each game, fetch the ball-by-ball (API key when granted, otherwise slowly); refit with a U11 offset for each outcome; run the replay tool on U11 games; compare predicted with actual balls by position and boundary rate | The first real test of the transfer assumption |
+| Before Round 1 (Sat 10 Oct 2026) | Team fielding effect added and calibration re-checked (done 22 Sep 2026); wicketkeeper flags if a real per-game signal can be sourced; load the U11 squad (new players get the grade prior); rerun the replay and strategy comparison for the actual squad | A pre-season recommendation with ranges, and a list of the assumptions it rests on |
+| Round 1 (done, 11 Oct 2026) | Fetched both U11 games; Navy's came through complete, White's has team totals only; engine strike rules corrected; first-game shifts turned into scenario dials | Section 4b |
+| Rounds 2 to 4 | After each game, fetch the ball-by-ball (API key when granted, otherwise slowly); refit with a U11 offset for each outcome; run the replay tool on U11 games; compare predicted with actual balls by position and boundary rate | The real test of the transfer assumption |
 | After about 8 games | Narrow the ground-shift and drift dials to what the data support; rerun the grid | An updated recommendation; shrinking uncertainty |
 | End of season | Out-of-sample review: did the model predict totals and the shape of innings? | A go or no-go on relying on it for 2027 |
 
@@ -240,12 +322,20 @@ Still open:
    it, so a true keeper flag would need the coach's own per-game note.
 6. Is the runs-maximising bank-and-recall policy (finding 5) an acceptable trade against its
    fairness goal, or should a version that specifically protects the weakest batters' balls
-   be built instead, even if it costs a little more than +1.4 runs?
+   be built instead, even if it costs a little more than +1.3 runs? At U11-like scoring the
+   weakest batter's balls fall from about 8 to 5 under the current thresholds (section 4b).
+7. White's Round 1 record: batting order, runs and balls, who bowled and who kept. PlayHQ has
+   only the totals for that game (131/4 against 91/7); if whoever scored it did not use
+   ball-by-ball scoring, your own record is the only source.
 
 ## 9. How to reproduce
 
 ```bash
 python scripts/compare_batting_strategies.py --search
+# the first pilot's strike rules, for comparison (reproduces its numbers exactly)
+python scripts/compare_batting_strategies.py --search --strike-rules earlier --out data/outputs/strategies_earlier_strike
+# a U11-like world (section 4b)
+python scripts/compare_batting_strategies.py --search --boundary-shift -0.3 --scoring-shift -1.1 --extras-rate 0.18 --out data/outputs/strategies_u11_like
 ```
 
 Writes `data/outputs/strategies/` (gitignored): `strategy_report.html`, `strategy_results.csv`,

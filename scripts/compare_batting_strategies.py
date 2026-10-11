@@ -64,9 +64,14 @@ RECALL_WITHIN_BALLS = 6
 RECALL_BELOW_RUNS = 5
 
 
-def scenario_grid() -> List[S.Scenario]:
-    """Assumptions to test: retirement, ground size, drift and opposition tactics."""
-    return [S.Scenario(retire_at=r, boundary_shift=b, drift_sd=d, tactics=t)
+def scenario_grid(strike_rules: str = "observed", scoring_shift: float = 0.0,
+                  extras_rate: float = 0.0) -> List[S.Scenario]:
+    """Assumptions to test: retirement, ground size, drift and opposition tactics.
+
+    ``strike_rules``, ``scoring_shift`` and ``extras_rate`` are held fixed across the grid.
+    """
+    return [S.Scenario(retire_at=r, boundary_shift=b, drift_sd=d, tactics=t, strike_rules=strike_rules,
+                       scoring_shift=scoring_shift, extras_rate=extras_rate)
             for r, b, d, t in itertools.product((25, 30, None), (0.0, -0.7, -1.4),
                                                 (0.0, 0.3), ("random", "smart"))]
 
@@ -259,9 +264,24 @@ def main() -> None:
     parser.add_argument("--out", default=None, help="Default: data/<data-dir>/outputs/strategies")
     parser.add_argument("--data-dir", default=None,
                         help="Use data/<name>/ instead of data/ (a second team)")
+    parser.add_argument("--strike-rules", default="observed",
+                        choices=("observed", "crossing only", "earlier"),
+                        help="How batters share the strike: observed (cross on odd runs, new "
+                             "batter takes strike after a wicket), crossing only, or earlier "
+                             "(rotate at the end of the over only, this tool's first version)")
+    parser.add_argument("--boundary-shift", type=float, default=0.0,
+                        help="Boundary log-odds shift for the main scenario (the grid sweeps its own)")
+    parser.add_argument("--scoring-shift", type=float, default=0.0,
+                        help="Shift on the log-odds a non-boundary ball scores, main scenario and "
+                             "grid (first U11 game: about -1.1)")
+    parser.add_argument("--extras-rate", type=float, default=0.0,
+                        help="Chance a delivery is a wide or no-ball, main scenario and grid "
+                             "(first U11 game: about 0.18)")
     args = parser.parse_args()
 
-    global OUTPUT_DIR
+    global OUTPUT_DIR, MAIN
+    MAIN = dataclasses.replace(MAIN, strike_rules=args.strike_rules, boundary_shift=args.boundary_shift,
+                               scoring_shift=args.scoring_shift, extras_rate=args.extras_rate)
     OUTPUT_DIR = (REPO_ROOT / "data" / args.data_dir / "outputs" if args.data_dir
                   else REPO_ROOT / "data" / "outputs")
     args.ball_posterior = args.ball_posterior or str(OUTPUT_DIR / "ball_posterior.nc")
@@ -313,7 +333,7 @@ def main() -> None:
         # The grid: every named order (and the searched one) in every scenario.
         grid_orders = {k: v for k, v in orders.items() if not k.startswith("random")}
         grid_orders.update(S.random_orders(squad, 3, args.seed + 1))
-        for scenario in scenario_grid():
+        for scenario in scenario_grid(args.strike_rules, args.scoring_shift, args.extras_rate):
             res = S.evaluate(runner, grid_orders, ranking, scenario, (0, args.grid_worlds),
                              args.reps, args.seed)
             rows += summarise(scenario, res)

@@ -11,7 +11,9 @@ Simplifications (documented, low aggregate impact):
 * Non-boundary runs are drawn from a two-point distribution
   calibrated to the batter's scoring rate.
 * Wide/no-ball extras score one run.
-* End changes follow standard cricket conventions.
+* Strike follows 17.4(iv) and the first U11 ball-by-ball game: batters
+  swap ends on odd runs and again at the end of each over, and a new
+  batter takes strike after a wicket (both set on the playing conditions).
 """
 
 from __future__ import annotations
@@ -602,12 +604,15 @@ def simulate_innings(
                 replacement = _next_available()
                 if replacement is None:
                     break
-                if striker_out:
+                if not striker_out:
+                    non_striker = replacement
+                elif conditions.incoming_batter_takes_strike:
+                    # The new batter walks in at the striker's end.
+                    striker = replacement
+                else:
                     # The surviving batter faces the next ball and the
                     # new batter takes the vacant end.
                     striker, non_striker = non_striker, replacement
-                else:
-                    non_striker = replacement
                 continue
 
             if outcomes is not None:
@@ -620,12 +625,22 @@ def simulate_innings(
             card.boundaries += int(boundary)
             over_runs[-1] += runs
 
-            if _try_retire(striker):
+            faced = striker
+            if conditions.batters_cross_on_runs and runs % 2 == 1:
+                striker, non_striker = non_striker, striker
+            if _try_retire(faced):
+                # The retiring batter leaves from wherever they now stand.
                 replacement = _next_available()
                 if replacement is None:
-                    striker = None
+                    if faced is striker:
+                        striker = None
+                    else:
+                        non_striker = None
                     break
-                striker = replacement
+                if faced is striker:
+                    striker = replacement
+                else:
+                    non_striker = replacement
 
         if striker is None or non_striker is None:
             break

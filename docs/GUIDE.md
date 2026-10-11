@@ -27,8 +27,15 @@ to run code to follow it; the commands are collected in section 7.
      tried, including strong-weak pairings, across a wide range of assumptions.
      The one thing that beat it was not a different order: letting the top four
      retire at 25 balls and recalling the strongest one straight back in if the
-     next batter is out cheaply gained about 1.4 runs, in every scenario tested.
+     next batter is out cheaply gained about 1.3 runs, in every scenario tested.
      See [BATTING_STRATEGY_METHOD.md](BATTING_STRATEGY_METHOD.md).
+  4. The first U11 game (Round 1, 10 Oct 2026) tested two assumptions. Batters do
+     cross on odd runs (the engine had them rotate at the end of the over only; fixed,
+     and it changed no conclusion). And U11 scoring looks different from U10: scoring
+     shots about half as common, wides and no-balls about 18% of deliveries. In a world
+     with those, the conventional order still wins among fixed orders and the
+     bank-and-recall tactic is worth about 3 runs. One game, so a scenario to test,
+     not a fitted result (method note, section 4b).
 
 ## 2. How the pieces fit together
 
@@ -315,6 +322,13 @@ The charts: `worms.png` (median runs accumulated and per over by strategy),
 order in every scenario tested; red is worse). Full method and findings in
 [BATTING_STRATEGY_METHOD.md](BATTING_STRATEGY_METHOD.md).
 
+The assumptions behind a run are set on the command line, and the scenario text in the
+table says when one is not at its default: `--boundary-shift`, `--scoring-shift` (the
+log-odds that a non-boundary ball scores) and `--extras-rate` (the chance a delivery is a
+wide or no-ball) describe a U11-like world, and `--strike-rules earlier` brings back the
+first version's rotation at the end of the over only. The defaults are U10 rates with the
+corrected strike rules; the method note's section 4b gives the U11-like settings.
+
 ### 4.8b `model_summary.csv`, `search_history.csv`, `run_differential.png`
 
 Older outputs of the per-player model and the original optimiser. `model_summary.csv`
@@ -358,7 +372,11 @@ A low percentile flags a day worth looking at; it is not a diagnosis.
   this gap (it was the 61st) but did not close it; ball-count and position effects
   are candidates for the rest, or it may just be the small sample.
 - Everything about U11 is an extrapolation from U10 skills: U11 boundaries are 45 m
-  against 30 to 35 m, the ball may be heavier, and the players are a year older.
+  against 30 to 35 m, the ball may be heavier, and the players are a year older. The
+  first U11 game (Navy v Orange) is the only direct evidence so far: scoring shots
+  about half as common, boundaries a little rarer, wides and no-balls about 18% of
+  deliveries, dismissals the same. One game, so these are scenario settings to test,
+  not fitted effects.
 - Only 10 players and 15 games (13 with ball-by-ball). Wide brackets on some players
   are the honest reflection of that.
 - Wicketkeepers are not individually modelled; PlayHQ's data does not record who
@@ -407,6 +425,8 @@ python scripts/replay_games.py --team-id 75cdae66 --team-id fafdb4c4
 
 # 6. U11 batting-order strategies (about 5 minutes)
 python scripts/compare_batting_strategies.py --search
+# ... in a U11-like world (settings from the first U11 game)
+python scripts/compare_batting_strategies.py --search --boundary-shift -0.3 --scoring-shift -1.1 --extras-rate 0.18 --out data/outputs/strategies_u11_like
 ```
 
 Drop `--offline` (and add `--max-games 3`) to fetch new games from PlayHQ, slowly. It

@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -427,6 +428,40 @@ def completed_games(fixture: Dict[str, object]) -> List[Fixture]:
                 their_total=away_total if side == "HOME" else home_total,
             ))
     return sorted(games, key=lambda g: g.date)
+
+
+def needs_refresh(
+    card_json: Optional[Dict[str, object]],
+    events: Dict[str, Optional[List[Dict[str, object]]]],
+    game_date: str,
+    today: date,
+    max_age_days: int = 21,
+) -> bool:
+    """True when a cached recent game looks unfinished and is worth asking PlayHQ about again.
+
+    A scorecard is unfinished while its status is not FINAL (a game whose scorer never
+    closed it stays LIVE with no player lines), and an innings with no events may simply
+    not have been scored ball by ball yet. Only recent games qualify, so a finished season
+    whose scorers never used ball-by-ball is not re-requested forever.
+
+    Args:
+        card_json: The cached ``gameViewSpectator`` response, or None.
+        events: Cached events by side (HOME, AWAY); None or empty means none.
+        game_date: ISO date of the game.
+        today: Today's date.
+        max_age_days: Games older than this are left alone.
+
+    Returns:
+        Whether a refresh is worth its few requests.
+    """
+    try:
+        age = (today - date.fromisoformat(str(game_date)[:10])).days
+    except ValueError:
+        return False
+    if age > max_age_days:
+        return False
+    game = ((card_json or {}).get("data") or {}).get("game") or {}
+    return game.get("status") != "FINAL" or any(not v for v in events.values())
 
 
 def write_rows(

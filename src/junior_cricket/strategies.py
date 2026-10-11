@@ -29,7 +29,7 @@ assumptions about that transfer so their effect can be tested.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -65,17 +65,50 @@ class Scenario:
         tactics: ``random`` gives the opposition's overs and rotation out
             at random; ``smart`` gives the biggest shares and the opening
             overs to their best bowlers.
+        strike_rules: How the batters share the strike. ``observed`` (the
+            default) has them cross on odd runs, rotate at the end of the
+            over, and a new batter take strike after a wicket, as in the
+            booklet and the first U11 game; ``crossing only`` drops the
+            wicket rule; ``earlier`` rotates at the end of the over only, as
+            this engine first did.
+        scoring_shift: Shift on the log-odds that a non-boundary ball scores.
+            The first U11 ball-by-ball game (Navy v Orange, 10 Oct 2026) had
+            24% of such balls scoring against 48% in the same team's U10 data,
+            a shift of about -1.1 [-1.4, -0.8]; one game, so test, do not trust.
+        extras_rate: Chance that a delivery is a wide or no-ball (one run, and
+            it counts toward the batter's 25 and 35 limits). The strategy
+            simulations used zero; that game had 18% [15%, 22%] against 7%
+            in Navy's U10 data.
     """
 
     retire_at: Optional[int] = None
     boundary_shift: float = 0.0
     drift_sd: float = 0.0
     tactics: str = "random"
+    strike_rules: str = "observed"
+    scoring_shift: float = 0.0
+    extras_rate: float = 0.0
 
     def label(self) -> str:
         retire = self.retire_at or U11.retirement_mandatory_balls
-        return (f"retire {retire}, boundary {self.boundary_shift:+.1f}, "
+        text = (f"retire {retire}, boundary {self.boundary_shift:+.1f}, "
                 f"drift {self.drift_sd:.1f}, {self.tactics} attack")
+        if self.scoring_shift:
+            text += f", scoring {self.scoring_shift:+.1f}"
+        if self.extras_rate:
+            text += f", extras {self.extras_rate:.0%}"
+        return text if self.strike_rules == "observed" else f"{text}, {self.strike_rules} strike"
+
+
+def conditions_for(scenario: Scenario):
+    """The U11 playing conditions with the scenario's strike rules."""
+    if scenario.strike_rules == "observed":
+        return U11
+    if scenario.strike_rules == "crossing only":
+        return replace(U11, incoming_batter_takes_strike=False)
+    if scenario.strike_rules == "earlier":
+        return replace(U11, batters_cross_on_runs=False, incoming_batter_takes_strike=False)
+    raise ValueError(f"Unknown strike rules: {scenario.strike_rules!r}")
 
 
 # --------------------------------------------------------------------------
@@ -124,8 +157,8 @@ def named_orders(players: Sequence[str], value: Dict[str, float]) -> Dict[str, T
     With the squad ranked r1 (best) to rN (worst), the pair at the crease
     at the start is the first two in the order, the next pair the next two,
     and so on (a dismissal or retirement changes who is paired). Batters
-    change ends only at the end of an over, so a pair shares the strike
-    over by over.
+    change ends on odd runs and at the end of each over, so a pair shares
+    the strike ball by ball rather than over by over.
 
     * ``strongest to weakest``: r1, r2, r3 ... the conventional order.
     * ``weakest to strongest``: the reverse.
@@ -217,6 +250,7 @@ def make_world(pool, scenario: Scenario, ours: Sequence[str], seed: int, number:
     base = pool[int(rng.integers(len(pool)))]
     a = dict(base.a)
     a["b"] += scenario.boundary_shift
+    a["s"] += scenario.scoring_shift
     bat, bowl = dict(base.bat), dict(base.bowl)
     if scenario.drift_sd:
         for name in ours:
@@ -261,10 +295,13 @@ def run_strategy_task(task: StrategyTask) -> Dict[str, np.ndarray]:
             replay._POOL, task.scenario, task.ranking, task.seed, start + i)
         out["rating"][i] = rating
         fielders = {name: stub(name) for name in opposition}
+        for fielder in fielders.values():
+            fielder.p_extra = task.scenario.extras_rate
         for r in range(task.reps):
             rng = np.random.default_rng([task.seed, start + i, r, 1])
             result = simulate_innings(
-                batting, fielders, rotation, allocation, rng, conditions=U11,
+                batting, fielders, rotation, allocation, rng,
+                conditions=conditions_for(task.scenario),
                 retire_at_balls=task.scenario.retire_at, outcomes=rule,
                 bankable=task.bankable or None,
                 recall_within_balls=task.recall_within_balls,

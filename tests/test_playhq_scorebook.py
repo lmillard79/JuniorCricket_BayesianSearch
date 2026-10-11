@@ -1,5 +1,6 @@
 """Tests for the pseudonymised PlayHQ scorebook builder."""
 
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -18,6 +19,7 @@ from junior_cricket.playhq_scorebook import (
     build_game_rows,
     completed_games,
     load_aliases,
+    needs_refresh,
     save_aliases,
     translate_aliases,
     write_rows,
@@ -291,3 +293,18 @@ def test_written_csvs_pass_the_existing_loaders(tmp_path: Path) -> None:
     bowling = load_bowling_csv(tmp_path / "bowl.csv")
     assert len(batting) == 2 and len(bowling) == 2
     assert batting["source"].unique().tolist() == ["playhq"]
+
+
+def test_only_recent_unfinished_games_are_worth_refreshing() -> None:
+    final = {"data": {"game": {"status": "FINAL"}}}
+    live = {"data": {"game": {"status": "LIVE"}}}
+    full = {"HOME": [{"id": "e"}], "AWAY": [{"id": "e"}]}
+    empty = {"HOME": [], "AWAY": []}
+    today = date(2026, 10, 11)
+    assert not needs_refresh(final, full, "2026-10-10", today)          # finished: left alone
+    assert needs_refresh(live, full, "2026-10-10", today)               # the scorer never closed it
+    assert needs_refresh(final, {"HOME": [{"id": "e"}], "AWAY": []}, "2026-10-10", today)
+    assert needs_refresh(live, empty, "2026-10-10", today)
+    assert needs_refresh(None, {"HOME": None, "AWAY": None}, "2026-10-10", today)
+    assert not needs_refresh(live, empty, "2026-09-01", today)          # old: not asked about forever
+    assert not needs_refresh(live, empty, "not a date", today)

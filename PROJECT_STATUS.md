@@ -2,7 +2,7 @@
 
 ## Junior Cricket Bayesian MARCEL - VDCC Lineup Optimiser
 
-Last updated: 2026-09-22 (personal PC, game replays, U11 batting-strategy method)
+Last updated: 2026-10-11 (Round 1 of 2026/27: first U11 data, strike rules corrected)
 
 How to read every output: `docs/GUIDE.md`. U11 batting-order method, pilot
 results and pathway: `docs/BATTING_STRATEGY_METHOD.md`.
@@ -12,8 +12,10 @@ results and pathway: `docs/BATTING_STRATEGY_METHOD.md`.
 **Phase: real U10 data ingested and validated. A joint batter-by-bowler
 ball model fixes most of the simulator's bias and now drives the optimiser.
 Real games can be replayed and reshuffled, and U11 batting-order strategies
-are compared against an unknown opposition. What remains is a team fielding
-effect and the U10-to-U11 transfer.**
+are compared against an unknown opposition. The team fielding effect is in.
+The first U11 game (Round 1, 10 Oct 2026) is the first direct look at the
+U10-to-U11 transfer; what remains is wicketkeeper flags, a proper U11 refit as
+games arrive, and White's own Round 1 record (PlayHQ has only its totals).**
 
 | Component | Status | Where |
 | --- | --- | --- |
@@ -29,8 +31,8 @@ effect and the U10-to-U11 transfer.**
 | U11 simulator and optimiser | Works; run-out bookkeeping fixed; accepts the joint model | `simulator.py`, `optimizer.py` |
 | Player report and private name translation | Done | `scripts/player_report.py`, `scripts/name_report.py` |
 | **Game replays and decision studies** (U10) | Done. Over-by-over charts, percentile of each recorded result, batting-order and bowling-split studies | `replay.py`, `replay_plots.py`, `scripts/replay_games.py` |
-| **U11 batting-order strategies** | Done as a pilot. Paired worlds, named strategies, swap search on fresh worlds, 36-scenario stress grid | `strategies.py`, `scripts/compare_batting_strategies.py` |
-| Tests | 143 passing | `tests/` |
+| **U11 batting-order strategies** | Done as a pilot, re-run 11 Oct 2026 with corrected strike rules and dials for the first U11 game's scoring and extras. Paired worlds, named strategies, swap search on fresh worlds, 36-scenario stress grid | `strategies.py`, `scripts/compare_batting_strategies.py` |
+| Tests | 170 passing | `tests/` |
 
 ## Real data
 
@@ -47,6 +49,11 @@ with PlayHQ profiles, plus a fill-in). Opposition: 87 players.
   innings (three differ by one ball or run; once the scorecard shows 121
   balls where the rules allow 120, and the events are right). Team total =
   batter runs + 4 x dismissals taken holds in 25 of 26 innings.
+* 2026/27 U11 (pulled 11 Oct 2026, local only, in `data/u11_white/` and `data/u11_navy/`,
+  alias maps seeded from the U10 ones so returning players keep their P-numbers): White
+  (team `2320bb54`, grade U11 Smith) Round 1 has only team totals and a line-up on PlayHQ
+  (scorecard status LIVE, both events feeds empty); Navy (team `10d73647`, grade U11
+  Hartley) Round 1 is complete, 223 fair balls. See "The first U11 data" below.
 * U10 facts measured: 0.0556 dismissals per ball (6.6 per innings); 24% of
   dismissals are run outs and the striker is out in 83% of those; no wide or
   no-ball events are recorded; no stumpings.
@@ -197,19 +204,19 @@ strategy is played through the same thousands of worlds (true skills drawn from
 the posterior, nine unknown opposition players from the grade, random or smart
 tactics, ground), so differences are paired; a swap search is judged on fresh worlds.
 
-Main scenario (retire at 35, U10 boundary rates, random attack; refit 22 Sep 2026
-with the fielding effect, replacing the figures this superseded), runs against
-strongest to weakest: strong-middle alternating -0.6 ± 0.3, balanced pairs (top
-six) -1.2 ± 0.3, strong-weak alternating -7.6 ± 0.4, weakest to strongest
--20.0 ± 0.5, random orders -10.0 on average. The swap search found nothing better
-than strongest to weakest, and among these *fixed orders*, none of the 35 other
-scenarios (retirement 25, 30 or 35; boundary shift 0, -0.7, -1.4; skill drift 0 or
-0.3; random or smart attack) found an alternative order beating it by more than 0.4
-runs. Split by opposition attack strength (thirds of the worlds), strong-weak
-alternating loses -7.4 ± 0.6 against the strongest attacks and -8.3 ± 0.7 against
-the weakest, so pairing does not shield the best batters from the best bowling. The
-mechanism is who gets the balls: the six best batters face 17 to 20 balls each
-under the conventional order.
+Main scenario (retire at 35, U10 boundary and scoring rates, random attack; re-run
+11 Oct 2026 with the corrected strike rules, which moved nothing by more than half a
+run from the 22 Sep fielding-effect run), runs against strongest to weakest:
+strong-middle alternating -0.2 ± 0.3, balanced pairs (top six) -1.2 ± 0.4,
+strong-weak alternating -7.9 ± 0.4, weakest to strongest -19.9 ± 0.4, random orders
+-9.6 on average. The swap search found nothing better than strongest to weakest, and
+among these *fixed orders*, none of the 35 other scenarios (retirement 25, 30 or 35;
+boundary shift 0, -0.7, -1.4; skill drift 0 or 0.3; random or smart attack) found an
+alternative order beating it by more than 0.5 runs. Split by opposition attack
+strength (thirds of the worlds), strong-weak alternating loses -8.7 ± 0.6 against
+the strongest attacks and -7.6 ± 0.7 against the weakest, so pairing does not shield
+the best batters from the best bowling. The mechanism is who gets the balls: the six
+best batters face 17 to 20 balls each under the conventional order.
 
 **Per-batter retirement: "bank top 4, recall on a cheap wicket".** Confirmed with
 the user (22 Sep 2026): coaches may retire batters individually between 25 and 35
@@ -223,38 +230,65 @@ the user's own framing of the policy: the top 4 batters may retire not out at 25
 balls instead of batting on; the strongest currently-banked batter is recalled
 immediately, ahead of the next fresh batter, if whoever comes in next is out within
 6 balls or for under 5 runs (both thresholds are illustrative defaults, not fitted).
-Result: **+1.4 ± 0.2 runs** against strongest to weakest in the main scenario, and
+Result: **+1.3 ± 0.2 runs** against strongest to weakest in the main scenario, and
 the best alternative in **all 37 scenarios tested** (main plus the 36-scenario
-grid), ranging +0.7 to +7.4. It stayed positive against every third of opposition
-attacks (+0.8 to +1.7), with no sign it depends on how strong the attack is.
+grid), ranging +0.7 to +7.8. It stayed positive against every third of opposition
+attacks (+1.1 to +1.7), with no sign it depends on how strong the attack is.
 Balls-by-rank shows the gain comes from the best batter facing about 2 more balls
-(20.4 to 22.5) at the expense of about 1 fewer for the weakest (5.3 to 4.0): the
+(20.5 to 22.3) at the expense of about 1 fewer for the weakest (5.4 to 4.4): the
 runs-maximising version of the policy is not, by itself, a direct answer to
 "everyone should get a go"; a fairness-weighted recall rule (protect the weakest
 batters' balls rather than maximise runs) has not been built. Retiring *every*
-batter at 25 rather than 35 (no bankable subset) still costs about 5 runs at the
+batter at 25 rather than 35 (no bankable subset) still costs about 6 runs at the
 current ground size.
 
-**Team fielding effect: design, not yet built.** The user approved adding this
-(22 Sep 2026) but has no view on mechanism. Plan: `ball_model.py`'s joint model
-already gives each component (`d` dismissal, `b` boundary, `s` scoring) a batter
-effect, a bowler effect, and (for `b`/`s` only) a per-game effect shared by both
-sides batting that day. Add one more term to `d` only: a per-game effect specific
-to *our* team's fielding (a `HalfNormal` scale plus a `Normal` group mean, non-centred
-by game, mirroring the existing `game_b`/`game_s` pattern), added to a ball's dismissal
-log-odds only when the bowler is one of ours. Checked: PlayHQ's raw scorecards do not
-tag who kept or fielded well (grepped a sample `scorecard.json`, no match), so this
-cannot be a per-fielder effect; it is scoped to a team-level, per-game nudge, which
-needs no new data collection (only which side bowled each ball, already known from
-the alias convention: `P0x` ours, `O0x` opposition). This directly targets the
-diagnosed bias (section "U10 simulator check" below): our own bowlers currently take
-more wickets than their individual skills explain. Not yet built: needs a refit
-(`fit_ball_model.py`) and will shift the headline replay and strategy numbers above,
-so it is being kept as its own step rather than folded into this session's changes.
-Wicketkeeper flags (`is_wicketkeeper` already exists in the player registry and
-`PlayerSkills`, but is only wired into bowling-tier allocation, not dismissal
-modelling) would need a real per-game record of who kept, which PlayHQ does not
-provide; blocked on the coach supplying it.
+**Team fielding effect: built 22 Sep 2026** (see the joint ball model section above for
+the result, 0.17 [-0.15, 0.47] on the dismissal log-odds, 81% probability positive).
+An earlier version of this note planned it as a team-level nudge on the grounds that
+PlayHQ does not tag fielders; that was wrong. Catches and run outs are named in both
+the scorecard statistics and the ball-by-ball titles, and are now carried per ball
+and reported per player (`player_report.py`'s Fielding table), though only 67 of 172
+dismissals name a fielder, too few for a per-player effect. Wicketkeeper flags
+(`is_wicketkeeper` already exists in the player registry and `PlayerSkills`, but is
+only wired into bowling-tier allocation, not dismissal modelling) would need a real
+per-game record of who kept, which PlayHQ does not provide; blocked on the coach
+supplying it. Rule 17.2(ii) has a change of wicketkeeper at the drinks break after
+over 13, so each side uses two keepers per game.
+
+## The first U11 data (Round 1, Sat 10 Oct 2026)
+
+Full write-up with tables: `docs/BATTING_STRATEGY_METHOD.md`, section 4b. In short:
+
+* **Results.** Navy 142/7 (25 overs) beat Orange 56/8 (all out in 14.1). White 131/4
+  beat Turquoise 91/7 in a game cut to 22 overs a side. Over limits were 25 and 22
+  (`OVER_LIMIT`); the rules are 25, minus 2 overs per 6 minutes lost.
+* **What PlayHQ holds.** Navy's game is complete (scorecard FINAL, ball-by-ball both
+  innings). White's has the team totals and a line-up of eight (one new to the data)
+  only: Turquoise was the home side and, apparently, did not score ball-by-ball. Worth
+  re-checking later, and worth asking whoever scores White's home games to use the live
+  scoring, because the analysis needs it.
+* **Engine fix.** The simulator rotated strike only at the end of the over. Rule
+  17.4(iv) has batters run popping crease to popping crease, and the game shows them
+  crossing on odd runs (the striker changed after 30 of 33 odd-run balls, 4 of 138
+  others) with a new batter usually taking strike after a wicket. Both are now on the
+  U11 playing conditions and switchable. Conclusions unchanged (at most half a run).
+  `--strike-rules earlier` reproduces the first pilot exactly (330 result rows
+  identical), and a separate check against the committed engine found 400 of 400
+  innings identical with both options off.
+* **U10 to U11 transfer (one game, so scenario dials, not fitted effects).** On the
+  model's logit scale, against Navy's 2,668 U10 balls: dismissal +0.12 [-0.34, +0.53],
+  boundary -0.34 [-0.75, +0.03], scoring shot **-1.08 [-1.37, -0.80]** (24% of
+  non-boundary balls scored against 48%), and wides or no-balls 18% [15%, 22%] of
+  deliveries against 7%. The strategy simulations had no wides at all.
+* **Conclusions in a U11-like world** (boundary -0.3, scoring -1.1, extras 18%): the
+  squad's mean total falls from 152 to 129 (the four real innings averaged 105);
+  strongest to weakest still beats every fixed alternative; strong-weak alternating
+  costs 4.9 rather than 7.9 runs; bank-and-recall is worth +3.3 ± 0.2 (+4.5 on
+  average over the 37 scenarios, best in all of them), though its thresholds were set
+  for U10 scoring and its participation cost grows (weakest batter's balls 8 to 5).
+* **Pools.** White is in U11 Smith with Turquoise (a VDCC sibling, met in Rounds 1 and
+  8), Ashgrove Astronauts, WNJCC Purple and Teal, and Bulls White and Yellow. Navy is
+  in U11 Hartley with VDCC Maroon and Orange. Different grades, so not pooled.
 
 ## Caveats that matter for 2026/27
 
@@ -266,7 +300,9 @@ provide; blocked on the coach supplying it.
 * **Wicketkeepers.** The optimiser does not know who keeps. The two players
   given one over are by rule the keepers; flag them or the bowling advice is
   unreliable.
-* **Skill transfer** U10 to U11 is an assumption. Only 10 players and 15 games.
+* **Skill transfer** U10 to U11 is an assumption. Only 10 players and 15 games. The
+  first U11 game (one game, Navy v Orange) points to far fewer scoring shots, more
+  wides and slightly fewer boundaries; these are scenario dials until more games arrive.
 * The check is in-sample; the backtests are the out-of-sample evidence.
 
 ## A second team: VDCC Navy
@@ -305,19 +341,24 @@ convention, needing an explicit `our_names` argument (now auto-detected by
 
 ## Next steps (in order)
 
-1. Wire wicketkeeper flags into the pipeline, if the coach can supply who kept
-   each game.
-2. Consider a fairness-weighted variant of bank-and-recall that protects the
-   weakest batters' balls specifically, if the current runs-maximising version
-   (see above) is not what is wanted.
-3. Fetch the two missing White games and 2024/25 (API key, or slowly later).
-4. When BNJCA publishes the 2026/27 U11 draw (Round 1 Sat 10 Oct 2026), get
-   the grade ID, fetch, fit, and rerun the strategy comparison and optimiser for
-   the real squad. First U11 games give the first direct test of the transfer
-   assumption (balls faced by batting position, boundary rate).
-5. If the Navy friend (or Nick) wants to keep using this, decide whether to
-   build the U11 batting-strategy comparison for Navy too, once useful data
-   exists for whichever grade they end up in.
+1. White's Round 1 record. PlayHQ has only the totals; the coach's own note of the
+   batting order, runs and balls, bowlers and keepers would let it enter the U11 data.
+   Re-check PlayHQ's scorecard later in case the scorer finalises it.
+2. Pull the other Smith-pool games (White's actual opponents) and Hartley-pool games for
+   Navy as they are played: a handful of requests per round at 2.5 s spacing, and the
+   right grade for the unknown-opposition prior. Not done yet; it needs a go-ahead.
+3. After a few more U11 games: refit the joint model with a U11 offset on each outcome
+   (and a wides rate) instead of fixed scenario dials, and compare predicted with actual
+   balls by batting position.
+4. Re-tune bank-and-recall's recall thresholds for U11 scoring (5 runs is no longer
+   "cheap"), and build the fairness-weighted variant that protects the weakest batters'
+   balls, if that is what is wanted.
+5. Wire wicketkeeper flags into the pipeline, if the coach can supply who kept each game.
+6. Fetch the two missing White U10 games and 2024/25 (API key, or slowly later).
+7. If the Navy friend (or Nick) wants to keep using this, build the U11 batting-strategy
+   comparison for Navy's own squad once there are a few more games.
+8. Optional: parse wides and no-balls as first-class events (they currently land in
+   "event titles not understood", which is harmless for the ball model).
 
 ## Key decisions log
 
@@ -330,7 +371,11 @@ convention, needing an explicit `our_names` argument (now auto-detected by
 - Player names never enter model CSVs; aliases only. `player_report.py --named`
   and `name_report.py` write private, gitignored named copies on request.
 - The 4-run U10 penalty goes to the fielding side's total (Rule 16.10(vi)).
-- Extras are not modelled when none are recorded; the population prior is used.
+- Extras: not modelled for U10 where none were recorded; for U11 they are a scenario dial
+  (`--extras-rate`, one run each, counted toward the 25 and 35-ball limits).
+- Strike rules follow rule 17.4(iv) and the first U11 game (batters cross on odd runs and
+  rotate at the end of the over; a new batter takes strike after a wicket), kept as two
+  switchable options on the playing conditions so the first pilot can be reproduced.
 - Order and bowling alternatives are compared on the same worlds (paired), screened
   on one set of replays and judged on a fresh set, because picking the best of many
   noisy estimates flatters it. The older optimiser's unpaired search is not used for

@@ -1,8 +1,9 @@
 # STATE.md - Session Close Handoff
 
-Session: 2026-09-22, personal PC (game replays, U11 batting-strategy method,
-bank-and-recall retirement policy, team fielding effect)
-Earlier: 2026-09-21 (real-data bring-up, validation, joint model)
+Session: 2026-10-11, personal PC (Round 1 of 2026/27: first U11 data, strike rules
+corrected, U11-like scenario dials)
+Earlier: 2026-09-22 (game replays, U11 batting-strategy method, bank-and-recall,
+team fielding effect, VDCC Navy), 2026-09-21 (real-data bring-up, validation, joint model)
 Project: JuniorCricket_BayesianSearch (VDCC lineup optimiser)
 Durable detail and all evidence: PROJECT_STATUS.md. How to read the outputs:
 docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_METHOD.md.
@@ -10,8 +11,21 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
 ## 1. Current status
 
 * Runs end to end on the personal PC (Windows 11, Python 3.14.7, PyMC
-  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 157 passed. No C
+  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 170 passed. No C
   compiler needed: sampling uses numpyro/JAX.
+* **First U11 data (Round 1, Sat 10 Oct 2026; docs/BATTING_STRATEGY_METHOD.md section
+  4b).** Navy 142/7 beat Orange 56/8 (Hartley pool), complete on PlayHQ with ball-by-ball.
+  White 131/4 beat Turquoise 91/7 (Smith pool, 22-over game): PlayHQ has only totals and a
+  line-up (scorecard LIVE, events empty), so nothing player-level. Fetched into
+  `data/u11_white/` and `data/u11_navy/`. Findings: (1) the engine's strike rule was wrong,
+  batters cross on odd runs (rule 17.4(iv); 30 of 33 odd-run balls) and a new batter
+  usually takes strike after a wicket; fixed on `rules_u11.py` (`batters_cross_on_runs`,
+  `incoming_batter_takes_strike`), conclusions unchanged; (2) U11 scoring differs from U10:
+  scoring shots 48% to 24% of non-boundary balls, wides and no-balls 18% of deliveries,
+  boundaries slightly rarer, dismissals the same (one game: scenario dials
+  `--scoring-shift`, `--extras-rate`, `--boundary-shift`, not fitted effects); (3) in that
+  U11-like world strongest to weakest still wins among fixed orders and bank-and-recall
+  is worth about +3.3 runs (best in all 37 scenarios).
 * **Team fielding effect** (new this session): the user corrected an earlier wrong
   claim that PlayHQ's data does not name fielders — it does, in both the scorecard
   stats and the ball-by-ball events feed, the second of which `playhq_parse.py` was
@@ -55,31 +69,35 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
 
 ## 2. Open items, in priority order
 
-1. **Wicketkeeper flags.** `is_wicketkeeper` already exists in the player
-   registry and `PlayerSkills`, but only feeds bowling-tier allocation, not
-   dismissal modelling. PlayHQ's data does not record who kept (checked
-   properly this session; it does record catches and run outs, now used, see
-   section 1); a keeper flag would need the coach's own per-game record. Ask
-   before building.
-2. **Fairness-weighted bank-and-recall.** The runs-maximising recall policy
-   just built shifts a couple of balls toward the best batter and away from
-   the weakest, so it is not by itself an answer to "everyone should get a
-   go". Build a variant that recalls to protect the weakest batters' balls,
-   if that is what is wanted, even at some cost to the +1.4 run gain.
-3. **U10 to U11 transfer.** U11 boundaries are 45 m (U10 30 to 35 m). The U10
-   boundary rate will not carry over at face value; the strategy grid tests
-   shifts of 0, -0.7 and -1.4 on the boundary log-odds. First U11 games are the
-   first direct test: refit with a U11 offset per outcome, and compare balls
-   faced by batting position and the boundary rate with the model's.
-4. **Two games lack ball-by-ball** (`e7967782`, `67b87a4c`). A burst of
-   requests earned a CloudFront 403. Do not retry soon; use an API key (the
-   user has asked PlayHQ, see the access-notes memory) or re-run
-   `fetch_scorecards.py` later (it resumes). One more game (`ee765d0d`) was
-   shortened to 18 overs and is left out of the replays.
-5. **2024/25** (season `2470e549`) as an older period; **2026/27** (season
-   `077d0fa1`, Round 1 Sat 10 Oct 2026): get the U11 grade ID from the team
-   page, then fetch, refit, and run `compare_batting_strategies.py --squad ...`
-   for the real squad.
+1. **White's Round 1 record.** PlayHQ has only the totals and a line-up of eight (one new
+   to the data). Ask for the batting order, runs and balls, bowlers and keepers, or re-check
+   the scorecard later with `fetch_scorecards.py --team-id 2320bb54 --data-dir u11_white
+   --refresh` (about four requests: it re-reads the fixture, so new rounds appear, and
+   re-asks only about recent games that were not FINAL or had empty events; checked at
+   12:20 on 11 Oct 2026 and still LIVE with no events). Ask whoever scores White's home
+   games to use live ball-by-ball scoring.
+2. **Other pool games.** The Smith pool (White's real opponents: Ashgrove Astronauts,
+   WNJCC Purple and Teal, Bulls White and Yellow, Turquoise) and the Hartley pool (Navy's)
+   would give the right grade for the unknown-opposition prior. A handful of requests per
+   round at 2.5 s spacing. Not started; ask first.
+3. **U11 refit.** After a few more U11 games, refit the joint model with a U11 offset on each
+   outcome and a wides rate instead of the fixed scenario dials, and compare predicted with
+   actual balls by batting position. A U11 version of `replay_games.py` does not exist yet
+   (the replay engine is U10-only).
+4. **Bank-and-recall.** Re-tune the recall thresholds for U11 scoring (under 5 runs is no
+   longer cheap), and build the fairness-weighted variant (protect the weakest batters'
+   balls) if that is what the coach wants; at U11-like scoring the weakest batter's balls
+   fall from about 8 to 5 under the current rule.
+5. **Wicketkeeper flags.** `is_wicketkeeper` already exists in the player registry and
+   `PlayerSkills`, but only feeds bowling-tier allocation, not dismissal modelling. PlayHQ
+   does not record who kept (checked properly: it does record catches and run outs, now
+   used); a keeper flag would need the coach's own per-game record. Rule 17.2(ii): a change
+   of wicketkeeper at the drinks break after over 13. Ask before building.
+6. **Two U10 games lack ball-by-ball** (`e7967782`, `67b87a4c`). A burst of requests earned
+   a CloudFront 403. Do not retry soon; use an API key (the user has asked PlayHQ, see the
+   access-notes memory) or re-run `fetch_scorecards.py` later (it resumes). One more game
+   (`ee765d0d`) was shortened to 18 overs and is left out of the replays. 2024/25 (season
+   `2470e549`) is not fetched.
 
 ## 3. How to run (from the repo root)
 
@@ -93,9 +111,14 @@ python scripts/player_report.py --squad P01,P03,P04,P05,P06,P07,P08,P09,P10 --na
 python scripts/name_report.py data/outputs/lineup_recommendation.md
 python scripts/replay_games.py --team-id 75cdae66 --team-id fafdb4c4
 python scripts/compare_batting_strategies.py --search
+python scripts/compare_batting_strategies.py --search --boundary-shift -0.3 --scoring-shift -1.1 --extras-rate 0.18 --out data/outputs/strategies_u11_like
+# 2026/27 U11 pulls (each in its own folder; seeded with the U10 alias maps); --refresh
+# picks up new rounds and unfinished games, and is what to run after each Saturday
+python scripts/fetch_scorecards.py --team-id 2320bb54 --data-dir u11_white --refresh
+python scripts/fetch_scorecards.py --team-id 10d73647 --data-dir u11_navy --refresh
 ```
 
-The replay takes about 10 minutes and the strategy comparison about 5 (both use
+The replay takes about 10 minutes and the strategy comparison about 4 (both use
 all but two cores). Outputs: `data/outputs/replay/replay_report.html` and
 `data/outputs/strategies/strategy_report.html` (gitignored; aliases and public
 team names only).
@@ -129,6 +152,20 @@ Drop it (and set `--max-games 3`) to fetch, slowly.
   "who's ours" from); `fit_ball_model.py` detects a non-P0x alias map and
   passes it automatically. Never commit or share a named variant's outputs
   beyond the family who asked for it.
+* **The two U11 data dirs share alias numbering with the U10 ones only by copy.** They were
+  seeded with copies of `player_map.csv` and `opposition_map.csv` so returning players keep
+  their P-numbers; new players get new numbers in that folder's map only. If a pull is ever
+  merged back into `data/` or `data/navy/`, copy the maps back first, or the numbering
+  diverges. U11 events carry wides and no-balls as their own events (`icon` WD or NB, no
+  score), which `playhq_parse.py` files under "not understood": harmless for the ball model.
+* **Strike options.** `U11` has `batters_cross_on_runs` and `incoming_batter_takes_strike`
+  both True. `compare_batting_strategies.py --strike-rules earlier` (or
+  `dataclasses.replace(U11, ...)` with both False) reproduces the engine as it was before
+  11 Oct 2026, exactly (verified). A new `PlayingConditions` field must default so the U10
+  rules still build.
+* **Reading the BNJCA rules PDF.** WebFetch saves the PDF under the session's tool-results
+  folder; the Read tool's PDF mode needs `pdftoppm` (not installed), but `pdftotext -layout`
+  (mingw) works. Section 17 is the U11 boys' rules; 17.4(iv) and 17.9 matter most.
 * **Tenant headers differ by service.** `api.playhq.com` needs
   `tenant: cricket-australia` (with `ca` scores come back empty); the
   spectator service needs `x-phq-tenant: ca`.

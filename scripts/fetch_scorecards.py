@@ -17,6 +17,7 @@ route (https://docs.playhq.com/tech/).
 
 Examples:
     python scripts/fetch_scorecards.py --team-id 75cdae66 --team-id fafdb4c4
+    python scripts/fetch_scorecards.py --team-id 2320bb54 --data-dir u11_white --refresh
     python scripts/fetch_scorecards.py --team-id 75cdae66 --offline
     python scripts/fetch_scorecards.py --team-id 75cdae66 --max-games 3
 """
@@ -25,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -46,6 +48,7 @@ from junior_cricket.playhq_scorebook import (
     build_game_rows,
     completed_games,
     load_aliases,
+    needs_refresh,
     save_aliases,
     write_rows,
 )
@@ -84,6 +87,12 @@ def main() -> None:
                         help="Minimum seconds between requests")
     parser.add_argument("--max-games", type=int, default=None,
                         help="Fetch at most this many games this run")
+    parser.add_argument("--refresh", action="store_true",
+                        help="Re-request the fixture (new results) and any recent game whose "
+                             "scorecard was not FINAL or whose innings had no events; "
+                             "finished games are never re-requested")
+    parser.add_argument("--refresh-days", type=int, default=21,
+                        help="With --refresh, only games this recent are re-checked")
     parser.add_argument("--data-dir", default=None,
                         help="Use data/<name>/ instead of data/ (a second team, kept "
                              "fully separate: its own raw cache, alias numbering and "
@@ -117,7 +126,7 @@ def main() -> None:
     for team_id in args.team_id:
         fixture_path = RAW_DIR / "fixtures" / f"team_{team_id}.json"
         fixture = _read(fixture_path)
-        if fixture is None and can_fetch():
+        if (fixture is None or args.refresh) and can_fetch():
             try:
                 fixture = client.team_fixture(team_id)
                 _write(fixture_path, fixture)
@@ -138,6 +147,12 @@ def main() -> None:
                 side: _read(game_dir / f"events_{side}.json")
                 for side in (HOME, AWAY)
             }
+            cached = None
+            if (args.refresh and can_fetch() and card_json is not None
+                    and needs_refresh(card_json, events, game.date, date.today(),
+                                      args.refresh_days)):
+                cached = (card_json, dict(events))
+                card_json, events = None, {side: None for side in (HOME, AWAY)}
             needs_fetch = card_json is None or any(v is None for v in events.values())
             if needs_fetch and can_fetch() and (fetch_budget is None or fetch_budget > 0):
                 try:
@@ -157,6 +172,11 @@ def main() -> None:
                 except PlayHQAPIError as exc:
                     logger.warning("Game %s fetch failed: %s", game.game_id, exc)
 
+            if cached is not None:
+                # A refresh that could not fetch falls back to what was cached.
+                card_json = card_json if card_json is not None else cached[0]
+                events = {side: events[side] if events[side] is not None else cached[1][side]
+                          for side in (HOME, AWAY)}
             incomplete = card_json is None or any(v is None for v in events.values())
             if incomplete:
                 n_partial += 1

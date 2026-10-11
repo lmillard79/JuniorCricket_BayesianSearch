@@ -159,3 +159,40 @@ def test_evaluate_one_bank_and_recall_changes_who_faces_the_balls() -> None:
                                 bankable=SQUAD[:4], recall_within_balls=6, recall_below_runs=5)
     # The top four are on strike more often when they can be recalled early.
     assert banked["balls"][:, :, :4].mean() > plain["balls"][:, :, :4].mean()
+
+
+def test_scoring_shift_moves_the_scoring_intercept_only() -> None:
+    pool = [rule()]
+    plain = S.make_world(pool, S.Scenario(), SQUAD, 3, 0)[0]
+    shifted = S.make_world(pool, S.Scenario(scoring_shift=-1.1), SQUAD, 3, 0)[0]
+    assert shifted.a["s"] == pytest.approx(plain.a["s"] - 1.1)
+    assert shifted.a["b"] == plain.a["b"] and shifted.a["d"] == plain.a["d"]
+
+
+def test_a_lower_scoring_chance_means_fewer_runs() -> None:
+    orders = {"strongest to weakest": tuple(SQUAD)}
+    with R.Runner([rule(0.2)], workers=1) as runner:
+        plain = S.evaluate(runner, orders, SQUAD, S.Scenario(), (0, 60), 2, seed=2, chunks=3)
+        lower = S.evaluate(runner, orders, SQUAD, S.Scenario(scoring_shift=-1.1), (0, 60), 2,
+                           seed=2, chunks=3)
+    assert lower["strongest to weakest"]["total"].mean() < plain["strongest to weakest"]["total"].mean()
+
+
+def test_extras_use_up_deliveries_and_fall_to_the_eight_ball_cap() -> None:
+    """If every delivery is a wide, each over is eight of them and the innings scores 200."""
+    orders = {"strongest to weakest": tuple(SQUAD)}
+    with R.Runner([rule()], workers=1) as runner:
+        res = S.evaluate(runner, orders, SQUAD, S.Scenario(extras_rate=1.0), (0, 6), 1,
+                         seed=1, chunks=2)["strongest to weakest"]
+    assert (res["total"] == 25 * 8).all() and (res["wickets"] == 0).all()
+
+
+def test_scenario_labels_show_only_what_differs_from_the_defaults() -> None:
+    assert S.Scenario().label() == "retire 35, boundary +0.0, drift 0.0, random attack"
+    label = S.Scenario(scoring_shift=-1.1, extras_rate=0.18, strike_rules="earlier").label()
+    assert "scoring -1.1" in label and "extras 18%" in label and label.endswith("earlier strike")
+
+
+def test_unknown_strike_rules_are_rejected() -> None:
+    with pytest.raises(ValueError):
+        S.conditions_for(S.Scenario(strike_rules="sideways"))

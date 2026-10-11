@@ -100,7 +100,7 @@ Extracted from https://bnjca.org.au/wp-content/uploads/2026/07/2026-RULES-BOOKLE
 - Retired batters resume in order of retirement after all others dismissed/retired
 - No balls and Wides count in the batter's ball count
 - **Sundries NOT added to striker's score** (differs from U10)
-- 16 m pitch, batters bat from one end, rotate at end of each over
+- 16 m pitch, batters bat from one end, rotate at the end of each over, and run popping crease to popping crease (rule 17.4(iv)), so they also cross on odd runs; the first U11 ball-by-ball game confirmed it (the striker changed after 30 of 33 odd-run balls and 4 of 138 others)
 - LBW does not apply
 
 ### Bowling rules (the participation constraint that shapes the optimizer)
