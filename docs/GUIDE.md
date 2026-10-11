@@ -319,7 +319,9 @@ comes in next is out within 6 balls or for under 5 runs. It is the only alternat
 that gained runs rather than lost them, but rule 17.9(v) does not allow the early
 return without both coaches agreeing, so read that row as the most early recall could be
 worth. `price_retirement.py` (method note, section 4c) prices the options the rules do
-allow: who retires at 25 or 30 balls, with retirees returning at the end.
+allow: who retires at 25 or 30 balls, with retirees returning at the end. It also shows a
+below-the-minimum what-if (retire at 20), how long a batter's first stint at the crease is
+(for the heat), and how often the weakest batter gets in at all.
 
 A second table splits the same comparison by how strong the opposition attack was (the
 strongest, middle and weakest thirds of the simulated worlds; `strategy_by_attack_strength.csv`).
@@ -357,7 +359,18 @@ gitignored `data/smith_pool/outputs/` and is never committed or posted.**
   conceded a game (wides and no-balls, which are a large share of U11 totals).
 - **White's draw**: each round's opponent, home or away, and what is known about them. A team
   that has not played yet (or whose scorer did not use full scoring) shows as nothing to go on.
-- **Players to watch**: batters ranked by the **30-ball value** (the expected runs of a stint of
+- **What it takes to beat each opponent**: a rough model on team totals, not on players. It adds
+  up who scored what against whom, pulls every team toward average (so a big innings against a
+  weak attack counts for little), and starts each club from last season's record against White
+  and Navy. For each opponent it gives their typical total against us, our chance, and the
+  total that gives an even chance, three in four and nine in ten, for a 22-over game (25-over
+  figures in brackets). After one round the spreads are as big as the gaps between teams, so
+  treat it as a first guide that sharpens each week.
+- **Batting shape**: for each team innings, how much of the bat runs the top three made and how
+  many batters reached 10, which shows whether a side is top-heavy or deep.
+- **Players to watch** (the batters table also shows fours per 10 balls and how much a batter's
+  30-ball stint is worth over an average batter, roughly what dismissing them early saves):
+  batters ranked by the **30-ball value** (the expected runs of a stint of
   up to 30 balls that a dismissal ends, from runs and dismissals per ball, each blended with 20
   balls of average play), and bowlers by rated runs an over and wickets in a four-over spell
   (blended with 12 balls of average bowling). With one game a player has 10 to 30 balls, so the

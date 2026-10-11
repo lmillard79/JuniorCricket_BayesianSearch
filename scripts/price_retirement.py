@@ -1,18 +1,26 @@
-"""Price the retirement options the BNJCA U11 booklet allows.
+"""Price the retirement options for U11: runs, time in the heat, and who gets a bat.
 
-Rule 17.9(iv) and (v): a batter may retire not out from 25 balls and must retire at 35,
-and a retired batter may resume "once all other players have been dismissed or retired".
-So the choices a coach really has are who retires and when, with the retirees returning
-at the end. This plays the conventional order (strongest to weakest) with each such
-choice through the same simulated worlds and reports the runs it costs against everyone
-batting to 35, and how many balls the best and the weakest batters get.
+Rule 17.9(iv) and (v): a batter may retire not out from 25 balls (wides and no-balls count)
+and must retire at 35, and a retired batter may resume "once all other players have been
+dismissed or retired". So the choices a coach really has are who retires and when, with the
+retirees returning at the end. This plays the conventional order (strongest to weakest) with
+each such choice through the same simulated worlds and reports, against everyone batting to 35:
 
-For reference it also shows "recalled on a cheap wicket": banked batters coming back
-ahead of fresh ones. The booklet does not allow that (it would need both coaches to
-agree), so read it as the most early recall could be worth, not as an option.
+* the runs it costs;
+* how long the busiest batter's first stint is, from walking in to being out or retiring (average,
+  and the 90th percentile, which is a batter who lasts), and their total time out there including a
+  second stint after returning, as minutes of a 90-minute innings (a batter is "at the crease"
+  whenever they are at either end);
+* how often the weakest batter gets in at all, and how often all nine bat;
+* the balls the best and the weakest batters get.
 
-Two worlds are run: the U10 scoring rates as fitted, and a U11-like world with the
-shifts seen in the first U11 game (see docs/BATTING_STRATEGY_METHOD.md, section 4b).
+Retiring below 25 balls is not allowed by the booklet (it would need both coaches to agree,
+for example in the heat; the booklet allows extra drinks breaks in oppressive weather), and
+neither is bringing a banked batter back ahead of a fresh one. Both are shown, flagged, as
+what-ifs.
+
+Two worlds are run: the U10 scoring rates as fitted, and a U11-like world with the shifts seen
+in the first U11 game (see docs/BATTING_STRATEGY_METHOD.md, section 4b).
 
 Example:
     python scripts/price_retirement.py
@@ -29,6 +37,7 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SQUAD = "P01,P03,P04,P05,P06,P07,P08,P09,P10"
 LOGGER_NAME = "price_retirement"
+INNINGS_MINUTES = 90          # 25 overs in 90 minutes (rule 17.2(i))
 
 
 def main() -> None:
@@ -77,16 +86,15 @@ def main() -> None:
     with R.Runner(pool, workers=args.workers or R.default_workers()) as runner:
         for label, base in scenarios.items():
             at = lambda n: dataclasses.replace(base, retire_at=n)          # noqa: E731
+            # name: (scenario, bankable, recall within, recall below, allowed as written)
             variants = {
                 "everyone bats to 35 (conventional)": (base, (), None, None, True),
                 "everyone retires at 30": (at(30), (), None, None, True),
                 "everyone retires at 25": (at(25), (), None, None, True),
-                "top 2 retire at 25": (at(25), tuple(ranking[:2]), None, None, True),
-                "top 3 retire at 25": (at(25), tuple(ranking[:3]), None, None, True),
+                "everyone retires at 20 (below the minimum: needs agreement)": (at(20), (), None, None, False),
                 "top 4 retire at 25": (at(25), tuple(ranking[:4]), None, None, True),
-                "top 4 retire at 30": (at(30), tuple(ranking[:4]), None, None, True),
-                "top 4 retire at 25, recalled on a cheap wicket (not allowed as written)":
-                    (at(25), tuple(ranking[:4]), 6, 5, False),
+                "top 4 retire at 20 (below the minimum: needs agreement)": (at(20), tuple(ranking[:4]), None, None, False),
+                "top 4 retire at 25, recalled on a cheap wicket (needs agreement)": (at(25), tuple(ranking[:4]), 6, 5, False),
             }
             baseline = None
             for name, (scenario, bankable, within, below, allowed) in variants.items():
@@ -95,28 +103,42 @@ def main() -> None:
                 baseline = result if baseline is None else baseline
                 diff, se, better = S.paired(result, baseline)
                 balls = result["balls"].mean(axis=(0, 1))
+                deliveries = result["deliveries"][..., None]                     # (worlds, reps, 1)
+                stint = (result["first_stint"] / deliveries).max(axis=2) * INNINGS_MINUTES   # longest first stint
+                total = (result["crease"] / deliveries).max(axis=2) * INNINGS_MINUTES  # busiest batter, all stints
+                bats = result["balls"] > 0
                 rows.append({
                     "world": label, "option": name, "allowed_as_written": allowed,
                     "mean_total": float(S.world_means(result).mean()), "runs_vs_conventional": diff, "se": se,
                     "best_batter_balls": balls[0], "weakest_batter_balls": balls[-1],
                     "weakest_three_mean_balls": balls[-3:].mean(),
+                    "first_stint_minutes": float(stint.mean()), "first_stint_minutes_p90": float(np.percentile(stint, 90)),
+                    "busiest_total_minutes": float(total.mean()), "busiest_total_minutes_p90": float(np.percentile(total, 90)),
+                    "weakest_bats": float(bats[:, :, -1].mean()), "all_nine_bat": float(bats.all(axis=2).mean()),
                 })
-                logger.info("%s | %s | %.1f | %+.1f ± %.1f | best %.1f weakest %.1f",
-                            label, name, rows[-1]["mean_total"], diff, se, balls[0], balls[-1])
+                logger.info("%s | %s | %+.1f ± %.1f | stint %.0f min (p90 %.0f) | weakest bats %.0f%% | all nine %.0f%%",
+                            label, name, diff, se, rows[-1]["first_stint_minutes"], rows[-1]["first_stint_minutes_p90"],
+                            100 * rows[-1]["weakest_bats"], 100 * rows[-1]["all_nine_bat"])
 
     table = pd.DataFrame(rows)
     table.to_csv(out / "retirement_options.csv", index=False)
     lines = ["# Retirement options (rule 17.9: retire from 25 balls, retirees resume once all others are out or retired)", "",
              f"Conventional order, {args.worlds} worlds x {args.reps} innings each, the same worlds for every option. "
-             "Runs are against everyone batting to 35; balls are per innings and include wides and no-balls.", ""]
+             "Runs are against everyone batting to 35. Balls include wides and no-balls. \"First stint\" is the longest first stint among the nine batters "
+             "(from walking in to being out or retiring, at either end), as a share of the innings' deliveries "
+             f"(minutes assume a {INNINGS_MINUTES}-minute innings); the 90th percentile is a batter who lasts. "
+             "\"Total\" adds a second stint after returning.", ""]
     for label in scenarios:
         part = table[table["world"] == label]
         lines += [f"## {label}", "",
-                  "| Option | Mean total | Runs vs conventional | Best batter's balls | Weakest batter's balls | Weakest three, mean balls |",
-                  "| --- | --- | --- | --- | --- | --- |"]
+                  "| Option | Runs vs conventional | First stint, minutes (average, 90th percentile) | Busiest batter's total, minutes (average, 90th percentile) | Weakest batter bats | All nine bat | Weakest batter's balls |",
+                  "| --- | --- | --- | --- | --- | --- | --- |"]
         for _, r in part.iterrows():
-            lines.append(f"| {r['option']} | {r['mean_total']:.1f} | {r['runs_vs_conventional']:+.1f} ± {r['se']:.1f} | "
-                         f"{r['best_batter_balls']:.1f} | {r['weakest_batter_balls']:.1f} | {r['weakest_three_mean_balls']:.1f} |")
+            lines.append(f"| {r['option']} | {r['runs_vs_conventional']:+.1f} ± {r['se']:.1f} | "
+                         f"{r['first_stint_minutes']:.0f} ({r['first_stint_minutes_p90']:.0f}) | "
+                         f"{r['busiest_total_minutes']:.0f} ({r['busiest_total_minutes_p90']:.0f}) | "
+                         f"{100 * r['weakest_bats']:.0f}% | {100 * r['all_nine_bat']:.0f}% | "
+                         f"{r['weakest_batter_balls']:.1f} |")
         lines.append("")
     (out / "retirement_options.md").write_text("\n".join(lines), encoding="utf-8")
     print("\n".join(lines))

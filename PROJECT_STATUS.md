@@ -33,8 +33,9 @@ games arrive, and White's own Round 1 record (PlayHQ has only its totals).**
 | **Game replays and decision studies** (U10) | Done. Over-by-over charts, percentile of each recorded result, batting-order and bowling-split studies | `replay.py`, `replay_plots.py`, `scripts/replay_games.py` |
 | **U11 batting-order strategies** | Done as a pilot, re-run 11 Oct 2026 with corrected strike rules and dials for the first U11 game's scoring and extras. Paired worlds, named strategies, swap search on fresh worlds, 36-scenario stress grid | `strategies.py`, `scripts/compare_batting_strategies.py` |
 | Pool scouting from public scorecards (private, names children) | Done. Per-player lines, shrunk ratings, U10 history, White's draw | `scouting.py`, `scripts/scout_pool.py` |
-| Retirement options priced (rule 17.9) | Done | `scripts/price_retirement.py` |
-| Tests | 182 passing | `tests/` |
+| Retirement options priced (rule 17.9), including time at the crease and who gets a bat | Done | `scripts/price_retirement.py` |
+| Team-strength model on innings totals (what total beats each opponent) | Done, a first guide | `scouting.py` (`fit_team_strengths`, `matchup`), `scripts/scout_pool.py` |
+| Tests | 196 passing | `tests/` |
 
 ## Real data
 
@@ -249,7 +250,13 @@ Balls-by-rank shows the gain comes from the best batter facing about 2 more ball
 runs-maximising version of the policy is not a participation lever (early recall works
 against it). Retiring *every* batter at 25 rather than 35 costs about 6 runs at the
 U10 scoring rates and about 3 in a U11-like world, where it lifts the weakest batter
-from about 8 to 12 balls: the cheapest lever the rules allow for "everyone gets a go".
+from about 8 to 12 balls and the chance the weakest batter bats at all from 76% to 98%: the
+cheapest lever the rules allow for "everyone gets a go". Heat (11 Oct 2026, from a coach's observation
+that a batter who lasted 25 balls was out there for half the innings): a batter who lasts has a first
+stint of about 43 minutes (upper tail 52) of a 90-minute innings at the 35 cap, 34 (42) retiring at 25 and
+29 (37) at 20, but the total time out there is unchanged because retirees return at the end. Retiring
+at 20 is below the booklet's 25-ball minimum (wides and no-balls count, so 25 deliveries is about 20 to
+21 legal balls at this season's rate); in the model it costs about the same runs as 25.
 
 **Team fielding effect: built 22 Sep 2026** (see the joint ball model section above for
 the result, 0.17 [-0.15, 0.47] on the dismissal log-odds, 81% probability positive).
@@ -322,6 +329,20 @@ shrunk toward the pool average, U10 history against White and Navy where a playe
 * **Retirement is routine here.** 16 retirements and 10 resumptions across the six
   innings with ball-by-ball; Teal retired six batters in one innings. See the correction under
   "Per-batter retirement" above.
+* **What it takes to beat the Bulls (first guide, 11 Oct 2026).** A team-strength model on innings
+  totals (pool average plus batting strength minus fielding strength plus about 24 runs of game luck,
+  strengths pulled toward average and started from last season's club record against White and Navy)
+  puts Bulls White at about 117 against White's attack in a 22-over game (133 in 25 overs) with White a
+  57% chance, and Bulls Yellow at about 114 (130) with White 61%. A score of about 138 (157 in 25 overs) wins
+  three times in four against Bulls White, and about 156 (178) nine times in ten. On Round 1 results alone
+  the chances are 48% and 52%. The Bulls' headline totals (156 and 135) came against the two weakest
+  attacks in the pool, which is why they look less dominant once adjusted; the spreads on every team are as
+  big as the gaps between them, so this sharpens each week. The one clear call is that the WNJCC sides are the
+  weakest.
+* **Shape of the Bulls' batting.** Both are top-four teams: Bulls White's top four made 117 of its 124 bat
+  runs (the other five made 7) and Bulls Yellow's made 76 of 85 (the other five made 9). Bulls White's top
+  three each scored at 116 to 148 runs per 100 balls with 6 to 7 fours; Bulls Yellow's top four were steadier
+  (16 to 24 each). Consistency across games cannot be judged yet: one game each.
 * Everyone has played one game or fewer, so the ratings are a shortlist to watch.
 
 ## Caveats that matter for 2026/27

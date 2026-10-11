@@ -165,3 +165,93 @@ def test_last_seasons_record_is_joined_by_profile_key(tmp_path: Path) -> None:
 def test_no_history_files_gives_an_empty_frame(tmp_path: Path) -> None:
     missing = tmp_path / "nothing.csv"
     assert S.u10_history(["pa"], [(missing, missing, missing)]).empty
+
+
+# ---- batting shape and team strengths ------------------------------------------------
+
+
+def _innings(runs_list, total, team="Home XI", game="g1", home=True):
+    home_players = [player(f"B{i}", f"b{i}", batting=dict(BALLS_FACED=10, TOTAL_RUNS=r)) for i, r in enumerate(runs_list)]
+    meta = S.GameMeta(game, "Round 1", "2026-10-10", "Home XI", "Away XI",
+                      {"TOTAL_SCORE": total, "TOTAL_OVERS": 22}, {"TOTAL_SCORE": 80, "TOTAL_OVERS": 22})
+    return S.player_games(card(home_players, []), meta), meta
+
+
+def test_batting_shape_measures_how_top_heavy_an_innings_was() -> None:
+    rows, meta = _innings([40, 20, 10, 5, 0], total=100)
+    shape = S.batting_shape(rows, [meta]).iloc[0]
+    assert shape["batter_runs"] == 75 and shape["extras"] == 25
+    assert shape["top3_share"] == pytest.approx(70 / 75) and shape["ten_plus"] == 3
+
+
+def _game(gid, home, away, home_total, away_total, limit=22):
+    return S.GameMeta(gid, "Round 1", "2026-10-10", home, away,
+                      {"TOTAL_SCORE": home_total, "TOTAL_OVERS": limit, "OVER_LIMIT": limit},
+                      {"TOTAL_SCORE": away_total, "TOTAL_OVERS": limit, "OVER_LIMIT": limit})
+
+
+def test_team_strengths_rank_teams_and_leave_unplayed_teams_average() -> None:
+    games = [_game("1", "A", "B", 150, 90), _game("2", "A", "C", 140, 100), _game("3", "B", "C", 110, 105)]
+    model = S.fit_team_strengths(games, ["A", "B", "C", "D"])
+    table = S.strength_table(model).set_index("team")
+    assert table.loc["A", "strength"] > 0 > table.loc["B", "strength"]
+    assert table.loc["D", "strength"] == pytest.approx(0.0) and table.loc["D", "sd"] == pytest.approx(model.tau)
+    assert table.loc["A", "sd"] < model.tau                      # a team with games is known better than one without
+
+
+def test_ratings_are_pulled_toward_average_so_one_big_win_is_not_taken_at_face_value() -> None:
+    model = S.fit_team_strengths([_game("1", "A", "B", 200, 40)], ["A", "B"])
+    table = S.strength_table(model).set_index("team")
+    assert 0 < table.loc["A", "strength"] < 80                   # a 160-run margin is worth far less than 80 a side
+
+
+def test_matchup_probabilities_are_complementary_and_even_for_equals() -> None:
+    games = [_game("1", "A", "B", 150, 90), _game("2", "C", "D", 120, 120)]
+    model = S.fit_team_strengths(games, ["A", "B", "C", "D"])
+    ab, ba = S.matchup(model, "A", "B"), S.matchup(model, "B", "A")
+    assert ab["p_win"] + ba["p_win"] == pytest.approx(1.0) and ab["p_win"] > 0.5
+    assert S.matchup(model, "C", "D")["p_win"] == pytest.approx(0.5, abs=0.01)
+
+
+def test_the_total_needed_rises_with_the_chance_of_winning_wanted() -> None:
+    model = S.fit_team_strengths([_game("1", "A", "B", 130, 100)], ["A", "B"])
+    m = S.matchup(model, "A", "B")
+    assert m["need_50"] < m["need_75"] < m["need_90"]
+    longer = S.matchup(model, "A", "B", overs_scale=25 / 22)
+    assert longer["need_75"] == pytest.approx(m["need_75"] * 25 / 22)
+
+
+def test_prior_strengths_move_a_team_with_no_games_yet() -> None:
+    model = S.fit_team_strengths([], ["A", "B"], strength_priors={"B": -20.0})
+    table = S.strength_table(model).set_index("team")
+    assert table.loc["B", "strength"] == pytest.approx(-20.0) and table.loc["A", "strength"] == pytest.approx(0.0)
+    assert S.matchup(model, "A", "B")["p_win"] > 0.6
+
+
+def test_totals_from_other_over_limits_are_scaled_to_the_base() -> None:
+    long_game = _game("1", "A", "B", 125, 100, limit=25)
+    short_game = _game("2", "A", "B", 110, 88, limit=22)
+    a = S.fit_team_strengths([long_game], ["A", "B"])
+    b = S.fit_team_strengths([short_game], ["A", "B"])
+    assert a.mean[1] == pytest.approx(b.mean[1], abs=0.5)         # 125 in 25 overs is 110 in 22
+
+
+def test_club_names_come_from_the_first_word() -> None:
+    assert S.club_of("BULLS U11 YELLOW") == "BULLS" and S.club_of("WNJCC U11 Mixed PURPLE") == "WNJCC"
+    assert S.club_of("") == ""
+
+
+def test_last_seasons_club_record_is_shrunk_by_how_many_games_there_were() -> None:
+    def fx(rows):
+        games = [{"id": f"g{i}", "date": "2025-10-01", "status": {"value": "FINAL"},
+                  "home": {"name": "Us"}, "away": {"name": club + " X"},
+                  "result": {"home": result_side(ours, 5, 20), "away": result_side(theirs, 5, 20)}}
+                 for i, (club, ours, theirs) in enumerate(rows)]
+        return {"discoverTeam": {"name": "Us"}, "discoverTeamFixture": [{"name": "R", "fixture": {"games": games}}]}
+
+    rows = [("WEAK", 150, 100)] * 11 + [("OTHER", 150, 120)] * 3 + [("ONCE", 100, 160)]
+    clubs = S.u10_club_strengths([fx(rows)])
+    assert clubs["WEAK"][1] == 11 and clubs["ONCE"][1] == 1
+    assert clubs["WEAK"][0] < clubs["OTHER"][0] < clubs["ONCE"][0]
+    raw_once = 0.5 * 60 * 22 / 20
+    assert 0 < clubs["ONCE"][0] < raw_once                         # one big result is mostly pulled back to the average

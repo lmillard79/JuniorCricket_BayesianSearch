@@ -11,7 +11,7 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
 ## 1. Current status
 
 * Runs end to end on the personal PC (Windows 11, Python 3.14.7, PyMC
-  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 182 passed. No C
+  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 196 passed. No C
   compiler needed: sampling uses numpyro/JAX.
 * **First U11 data (Round 1, Sat 10 Oct 2026; docs/BATTING_STRATEGY_METHOD.md section
   4b).** Navy 142/7 beat Orange 56/8 (Hartley pool), complete on PlayHQ with ball-by-ball.
@@ -39,7 +39,16 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
   (`data/smith_pool/outputs/scouting/scouting_report.md`, gitignored, local only). Round 1:
   Bulls White 156/6 and Bulls Yellow 135 won; WNJCC Purple and Teal lost; Ashgrove (White's
   Round 2 opponent) had the bye so there is no data yet. Last season Bulls teams beat White or
-  Navy 2 of 3 times, WNJCC teams lost 11 of 11.
+  Navy 2 of 3 times, WNJCC teams lost 11 of 11. The report also has a team-strength model
+  (`scouting.fit_team_strengths`, `matchup`): after adjusting for the weak attacks they faced and
+  starting each club from last season's record, Bulls White is rated about level with White (White
+  57% to win, needing about 117 in 22 overs for an even chance and 138 for three in four), and both
+  Bulls sides are top-four batting teams (the other five batters made 7 and 9 runs).
+* **Heat and retiring at 20 (11 Oct 2026).** `price_retirement.py` now reports time at the crease
+  (`BatterCard.crease_deliveries`, `longest_stint`, `first_stint`) and how often the weakest batter
+  bats. A first stint is about 43 minutes of a 90-minute innings at the 35 cap, 34 at 25, 29 at 20, but
+  the total time out there is unchanged because retirees return; retire at 20 costs about the same runs
+  as 25 and needs both coaches' agreement (minimum 25 balls, wides and no-balls counting).
 * **Team fielding effect** (new this session): the user corrected an earlier wrong
   claim that PlayHQ's data does not name fielders — it does, in both the scorecard
   stats and the ball-by-ball events feed, the second of which `playhq_parse.py` was
@@ -100,8 +109,11 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
    actual balls by batting position. A U11 version of `replay_games.py` does not exist yet
    (the replay engine is U10-only).
 4. **Retirement policy.** Agree with the coach what run cost is acceptable for the weakest
-   batters' balls (method note section 4c has the price list) and whether the opposing
-   coach would agree to early resumption of a retiree. The engine's early-recall thresholds
+   batters' balls and the strong batters' rest in the heat (method note section 4c has the price
+   list, including retire at 20 and stint lengths), whether to ask the opposing coach to agree to
+   a below-25 minimum in hot weather, and whether to ask about early resumption of a retiree.
+   Not modelled: a returning batter retiring again after a further 25 balls, and a tired
+   retiree choosing not to resume (the booklet says "may"). The engine's early-recall thresholds
    (6 balls, 5 runs) were set at U10 scoring; re-tune them only if early recall is on the table.
 5. **Wicketkeeper flags.** `is_wicketkeeper` already exists in the player registry and
    `PlayerSkills`, but only feeds bowling-tier allocation, not dismissal modelling. PlayHQ

@@ -101,14 +101,23 @@ class Scenario:
 
 
 def conditions_for(scenario: Scenario):
-    """The U11 playing conditions with the scenario's strike rules."""
+    """The U11 playing conditions with the scenario's strike rules.
+
+    A ``retire_at`` below the booklet's 25-ball minimum is a what-if (for example
+    "retire at 20 in the heat") that both coaches would have to agree to; it lowers
+    the minimum to match so the engine accepts it.
+    """
     if scenario.strike_rules == "observed":
-        return U11
-    if scenario.strike_rules == "crossing only":
-        return replace(U11, incoming_batter_takes_strike=False)
-    if scenario.strike_rules == "earlier":
-        return replace(U11, batters_cross_on_runs=False, incoming_batter_takes_strike=False)
-    raise ValueError(f"Unknown strike rules: {scenario.strike_rules!r}")
+        conditions = U11
+    elif scenario.strike_rules == "crossing only":
+        conditions = replace(U11, incoming_batter_takes_strike=False)
+    elif scenario.strike_rules == "earlier":
+        conditions = replace(U11, batters_cross_on_runs=False, incoming_batter_takes_strike=False)
+    else:
+        raise ValueError(f"Unknown strike rules: {scenario.strike_rules!r}")
+    if scenario.retire_at is not None and scenario.retire_at < conditions.retirement_optional_balls:
+        conditions = replace(conditions, retirement_optional_balls=scenario.retire_at)
+    return conditions
 
 
 # --------------------------------------------------------------------------
@@ -277,9 +286,12 @@ def make_world(pool, scenario: Scenario, ours: Sequence[str], seed: int, number:
 def run_strategy_task(task: StrategyTask) -> Dict[str, np.ndarray]:
     """Play the order through each world; return per-world, per-repetition results.
 
-    Keys: ``total``, ``wickets`` (worlds, reps); ``balls`` and ``runs`` by
-    rank (worlds, reps, players); ``over_runs`` (worlds, reps, overs);
-    ``rating`` (worlds,).
+    Keys: ``total``, ``wickets`` (worlds, reps); ``balls``, ``runs`` and
+    ``crease`` (deliveries bowled while the batter was at the crease) and
+    ``stint`` (their longest unbroken stint, in deliveries) and ``first_stint``
+    (the stint from walking in to the first dismissal or retirement) by rank
+    (worlds, reps, players); ``deliveries`` (worlds, reps) in the innings;
+    ``over_runs`` (worlds, reps, overs); ``rating`` (worlds,).
     """
     start, stop = task.worlds
     n, size = stop - start, len(task.order)
@@ -288,6 +300,10 @@ def run_strategy_task(task: StrategyTask) -> Dict[str, np.ndarray]:
            "balls": np.zeros((n, task.reps, size), dtype=np.int16),
            "runs": np.zeros((n, task.reps, size), dtype=np.int16),
            "over_runs": np.zeros((n, task.reps, OVERS), dtype=np.int16),
+           "crease": np.zeros((n, task.reps, size), dtype=np.int16),
+           "stint": np.zeros((n, task.reps, size), dtype=np.int16),
+           "first_stint": np.zeros((n, task.reps, size), dtype=np.int16),
+           "deliveries": np.zeros((n, task.reps), dtype=np.int16),
            "rating": np.zeros(n)}
     batting = [stub(name) for name in task.order]
     for i in range(n):
@@ -311,6 +327,10 @@ def run_strategy_task(task: StrategyTask) -> Dict[str, np.ndarray]:
             out["balls"][i, r] = [cards[p].balls for p in task.ranking]
             out["runs"][i, r] = [cards[p].runs for p in task.ranking]
             out["over_runs"][i, r, :len(result.over_runs)] = result.over_runs
+            out["crease"][i, r] = [cards[p].crease_deliveries for p in task.ranking]
+            out["stint"][i, r] = [cards[p].longest_stint for p in task.ranking]
+            out["first_stint"][i, r] = [max(cards[p].first_stint, 0) for p in task.ranking]
+            out["deliveries"][i, r] = sum(b.deliveries for b in result.bowler_cards)
     return out
 
 

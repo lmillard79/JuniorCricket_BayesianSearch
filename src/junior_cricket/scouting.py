@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+import numpy as np
 import pandas as pd
 
 from junior_cricket.playhq_parse import balls_bowled
@@ -355,3 +356,229 @@ def u10_history(
     if not pieces:
         return pd.DataFrame(columns=["key"])
     return pd.concat(pieces).groupby("key", as_index=False).sum(numeric_only=True)
+
+
+# --------------------------------------------------------------------------
+# Batting shape: top-heavy or deep, and how much of a total is extras
+
+
+def batting_shape(rows: Iterable[Dict[str, object]], games: Sequence[GameMeta]) -> pd.DataFrame:
+    """For each team innings: the total, the batters' runs, extras and how top-heavy it was.
+
+    Args:
+        rows: Output of ``player_games`` over every game.
+        games: The finished games, for the team totals.
+
+    Returns:
+        One row per (game, batting team) with ``total``, ``batter_runs``, ``extras``,
+        ``top3_share`` (the three highest scorers' runs as a share of the batters' runs),
+        ``ten_plus`` (batters who reached 10 runs) and ``retired`` batters.
+    """
+    frame = pd.DataFrame([r for r in rows if r["batted"]])
+    if frame.empty:
+        return pd.DataFrame()
+    meta = {g.game_id: g for g in games}
+    out: List[Dict[str, object]] = []
+    for (game_id, team), part in frame.groupby(["game_id", "team"], sort=False):
+        g = meta.get(game_id)
+        if g is None:
+            continue
+        stats = g.home_stats if team == g.home else g.away_stats
+        total = stats.get("TOTAL_SCORE")
+        runs = part["runs"].sort_values(ascending=False)
+        batter_runs = int(runs.sum())
+        out.append({
+            "game_id": game_id, "team": team, "round": g.round_name,
+            "total": total, "batter_runs": batter_runs,
+            "extras": (total - batter_runs) if total is not None else None,
+            "top3_share": float(runs.head(3).sum() / batter_runs) if batter_runs else float("nan"),
+            "ten_plus": int((runs >= 10).sum()), "retired": int(part["retired"].sum()),
+        })
+    return pd.DataFrame(out)
+
+
+# --------------------------------------------------------------------------
+# Team strength: what total it takes to beat a team, from results alone
+
+
+@dataclass
+class TeamModel:
+    """Posterior team strengths from innings totals (see ``fit_team_strengths``).
+
+    Attributes:
+        teams: Team names, in the order of the parameter vector after the mean.
+        mean: Posterior mean of [pool mean innings total, strength of each team].
+        cov: Posterior covariance of the same parameters.
+        sigma: Game-to-game noise in an innings total (runs).
+        tau: Spread of true team strengths (runs).
+    """
+
+    teams: List[str]
+    mean: np.ndarray
+    cov: np.ndarray
+    sigma: float
+    tau: float
+
+    def _vector(self, batting: str, fielding: str) -> np.ndarray:
+        a = np.zeros(len(self.teams) + 1)
+        a[0] = 1.0
+        a[1 + self.teams.index(batting)] += 1.0
+        a[1 + self.teams.index(fielding)] -= 1.0
+        return a
+
+
+def fit_team_strengths(
+    games: Sequence[GameMeta],
+    teams: Sequence[str],
+    tau: float = 14.0,
+    sigma: float = 24.0,
+    prior_mean: float = 120.0,
+    prior_sd: float = 40.0,
+    base_overs: int = 22,
+    strength_priors: Optional[Dict[str, float]] = None,
+) -> TeamModel:
+    """Team strengths in runs, from who scored what against whom.
+
+    Each innings total is the pool mean plus the batting team's strength minus the fielding
+    team's strength plus game-to-game noise. Strengths are pulled toward zero (an average team),
+    so one big innings against a weak attack moves a team's rating only partway. Teams with no
+    game yet keep the prior, which is what an average team looks like.
+
+    Args:
+        games: Finished games with both innings' totals.
+        teams: Every team in the pool, including those yet to play.
+        tau: Spread (runs) of true team strengths; ``sigma``: game-to-game noise (runs). The
+            defaults reproduce the 31-run spread of the first eight U11 innings (24 of game noise,
+            about 20 of team differences split across batting and fielding); revisit as games arrive.
+        prior_mean, prior_sd: Prior for the pool's mean innings total (runs).
+        base_overs: Totals from games with a different over limit are scaled to this many overs.
+        strength_priors: Prior mean strength (runs) for named teams, for example from last
+            season's record against them (``u10_club_strengths``); teams not named start at zero.
+
+    Returns:
+        The posterior over [mean, strengths].
+    """
+    names = list(dict.fromkeys(teams))
+    for g in games:
+        for t in (g.home, g.away):
+            if t not in names:
+                names.append(t)
+    k = len(names)
+    model = TeamModel(names, np.zeros(k + 1), np.eye(k + 1), sigma, tau)
+    design, y = [], []
+    for g in games:
+        for batting, fielding, stats in ((g.home, g.away, g.home_stats), (g.away, g.home, g.away_stats)):
+            total = stats.get("TOTAL_SCORE")
+            if total is None:
+                continue
+            limit = stats.get("OVER_LIMIT") or base_overs
+            design.append(model._vector(batting, fielding))
+            y.append(total * base_overs / limit)
+    prior_precision = np.diag([1 / prior_sd ** 2] + [1 / tau ** 2] * k)
+    priors = strength_priors or {}
+    prior_vector = np.array([prior_mean] + [float(priors.get(name, 0.0)) for name in names])
+    if design:
+        x, yv = np.array(design), np.array(y)
+        precision = prior_precision + x.T @ x / sigma ** 2
+        rhs = prior_precision @ prior_vector + x.T @ yv / sigma ** 2
+    else:
+        precision, rhs = prior_precision, prior_precision @ prior_vector
+    model.cov = np.linalg.inv(precision)
+    model.mean = model.cov @ rhs
+    return model
+
+
+def strength_table(model: TeamModel) -> pd.DataFrame:
+    """Each team's strength in runs per 22-over innings (positive is better), with its spread."""
+    sd = np.sqrt(np.diag(model.cov))[1:]
+    return pd.DataFrame({"team": model.teams, "strength": model.mean[1:], "sd": sd})
+
+
+def matchup(model: TeamModel, ours: str, theirs: str, overs_scale: float = 1.0) -> Dict[str, float]:
+    """How a game between ``ours`` and ``theirs`` is expected to go.
+
+    Args:
+        model: Fitted team strengths.
+        ours: Our team; ``theirs``: the opposition.
+        overs_scale: Multiply totals by this (for example 25/22 for a 25-over game).
+
+    Returns:
+        Their expected (median) total against us and ours against them, the chance we win, and
+        the total we would need to post for a 50%, 75% and 90% chance of beating them, all
+        allowing for the uncertainty in the ratings as well as game-to-game luck.
+    """
+    from math import erf, sqrt
+
+    from statistics import NormalDist
+
+    a_them = model._vector(theirs, ours)
+    a_us = model._vector(ours, theirs)
+    mean_them, mean_us = float(a_them @ model.mean), float(a_us @ model.mean)
+    var_them = float(a_them @ model.cov @ a_them) + model.sigma ** 2
+    diff = a_us - a_them
+    var_diff = float(diff @ model.cov @ diff) + 2 * model.sigma ** 2
+    z = NormalDist()
+    return {
+        "their_median": mean_them * overs_scale, "our_median": mean_us * overs_scale,
+        "p_win": 0.5 * (1 + erf((mean_us - mean_them) / sqrt(2 * var_diff))),
+        "need_50": mean_them * overs_scale,
+        "need_75": (mean_them + z.inv_cdf(0.75) * sqrt(var_them)) * overs_scale,
+        "need_90": (mean_them + z.inv_cdf(0.90) * sqrt(var_them)) * overs_scale,
+    }
+
+
+def club_of(team: str) -> str:
+    """The club a team name belongs to: its first word, upper-cased (BULLS, WNJCC, VDCC)."""
+    return team.split()[0].upper() if team and team.split() else ""
+
+
+def u10_club_strengths(
+    fixtures: Sequence[Dict[str, object]],
+    within_sd: float = 40.0,
+    between_sd: float = 33.0,
+    scale: float = 22 / 20,
+) -> Dict[str, Tuple[float, int]]:
+    """Each opposing club's strength relative to our U10 teams last season, shrunk, in runs.
+
+    For every finished U10 game of the given team fixtures, the opposition's total minus ours;
+    averaged by club and pulled toward the average club by how few games there were (a club met
+    once or twice is mostly the average; one met eleven times mostly its own record). A team of
+    strength s scores s more and concedes s fewer than an average one, so a score difference is
+    twice a strength difference. Scaled from 20-over U10 games to 22-over U11 ones.
+
+    Args:
+        fixtures: Cached ``team_fixture`` payloads of our U10 teams.
+        within_sd: Game-to-game spread of a score difference (runs).
+        between_sd: Spread of true club differences (runs of score difference).
+        scale: Overs scaling from U10 to U11.
+
+    Returns:
+        Club -> (strength relative to our teams, number of games).
+    """
+    diffs: Dict[str, List[float]] = {}
+    seen = set()
+    for fixture in fixtures:
+        us = (fixture.get("discoverTeam") or {}).get("name") or ""
+        for game in final_games(fixture):
+            if (game.game_id, us) in seen:
+                continue
+            seen.add((game.game_id, us))
+            if game.home == us:
+                ours, theirs, other = game.home_stats, game.away_stats, game.away
+            elif game.away == us:
+                ours, theirs, other = game.away_stats, game.home_stats, game.home
+            else:
+                continue
+            if "TOTAL_SCORE" in ours and "TOTAL_SCORE" in theirs:
+                diffs.setdefault(club_of(other), []).append(theirs["TOTAL_SCORE"] - ours["TOTAL_SCORE"])
+    if not diffs:
+        return {}
+    total_games = sum(len(v) for v in diffs.values())
+    grand = sum(sum(v) for v in diffs.values()) / total_games
+    out: Dict[str, Tuple[float, int]] = {}
+    for club, values in diffs.items():
+        n = len(values)
+        reliability = between_sd ** 2 / (between_sd ** 2 + within_sd ** 2 / n)
+        shrunk = grand + reliability * (sum(values) / n - grand)
+        out[club] = (0.5 * shrunk * scale, n)
+    return out

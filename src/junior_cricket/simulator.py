@@ -89,6 +89,15 @@ class BatterCard:
         boundaries: Fours plus sixes.
         out: Whether dismissed.
         retired: Whether retired Not out.
+        crease_deliveries: Deliveries bowled while the batter was at either end
+            (striker or non-striker, every stint), a measure of time on the
+            field in the heat. U11 engine only.
+        stint_deliveries: Deliveries in the batter's current unbroken stint.
+        longest_stint: The longest unbroken stint (in deliveries) so far; a
+            retiree's second stint starts the count again.
+        first_stint: Deliveries in the batter's first stint, from walking in to
+            the first dismissal or retirement (or the end of the innings); 0 if
+            they never batted.
     """
 
     name: str
@@ -99,6 +108,10 @@ class BatterCard:
     retired: bool = False
     resumed: bool = False
     dismissals: int = 0
+    crease_deliveries: int = 0
+    stint_deliveries: int = 0
+    longest_stint: int = 0
+    first_stint: int = -1
 
 
 @dataclass
@@ -531,6 +544,9 @@ def simulate_innings(
             optional < mandatory and card.balls >= optional
         ):
             card.retired = True
+            if card.first_stint < 0:
+                card.first_stint = card.stint_deliveries
+            card.stint_deliveries = 0
             retired_queue.append(player)
             return True
         return False
@@ -553,6 +569,11 @@ def simulate_innings(
         ):
             deliveries += 1
             bowler_card.deliveries += 1
+            for at_crease in (cards[striker.name], cards[non_striker.name]):
+                at_crease.crease_deliveries += 1
+                at_crease.stint_deliveries += 1
+                if at_crease.stint_deliveries > at_crease.longest_stint:
+                    at_crease.longest_stint = at_crease.stint_deliveries
 
             if rng.random() < bowler.p_extra:
                 # Wide or no ball: one run, counts in batter's balls.
@@ -592,6 +613,9 @@ def simulate_innings(
                 )
                 dismissed = cards[(striker if striker_out else non_striker).name]
                 dismissed.out = True
+                if dismissed.first_stint < 0:
+                    dismissed.first_stint = dismissed.stint_deliveries
+                dismissed.stint_deliveries = 0
                 if not run_out:
                     bowler_card.wickets += 1
                 if bankable is not None and (
@@ -656,6 +680,9 @@ def simulate_innings(
         striker, non_striker = non_striker, striker
         overs_completed += 1
 
+    for card in cards.values():
+        if card.first_stint < 0:
+            card.first_stint = card.stint_deliveries      # still at the crease when the innings ended, or never batted
     total_runs = sum(c.runs for c in cards.values()) + extras_runs
     return InningsResult(
         runs=total_runs,

@@ -253,7 +253,7 @@ coaches agreeing, section 4c). Two more cautions: its thresholds (out within 6 b
 dismissals and are worth re-tuning. And the participation cost grows: the best batter gains
 4 balls (23.1 to 27.3) and the weakest loses 3 (8.1 to 5.4).
 
-## 4c. The retirement options the booklet allows (rule 17.9)
+## 4c. The retirement options the booklet allows (rule 17.9), heat and who gets a bat
 
 A batter may retire not out from 25 balls (wides and no-balls count) and must at 35, and
 "any not out batter so retired may resume their innings in order of retirement once all
@@ -266,18 +266,21 @@ this pool.
 What a coach can choose is who retires and when. `scripts/price_retirement.py` plays the
 conventional order with each choice through the same 4,000 worlds (2 innings each) in the
 U10-like world and the U11-like world of section 4b. Runs are against everyone batting to 35
-(± is one standard error); balls are per innings and include wides and no-balls.
+(± is one standard error). The last five columns are for the U11-like world: how long the busiest
+batter's first stint is, from walking in to being out or retiring (minutes of a 90-minute innings,
+average and, in brackets, the 90th percentile, a batter who lasts), their total time out there
+including any second stint, how often the weakest batter gets in at all, how often all nine bat,
+and the weakest batter's balls (wides and no-balls included).
 
-| Option | U10-like runs | U11-like runs | U11-like: weakest batter's balls | U11-like: weakest three, mean balls |
-| --- | --- | --- | --- | --- |
-| everyone bats to 35 (conventional) | 0 | 0 | 8.0 | 11.5 |
-| everyone retires at 30 | -2.9 ± 0.1 | -2.0 ± 0.1 | 10.1 | 13.1 |
-| everyone retires at 25 | -5.5 ± 0.2 | -3.1 ± 0.2 | 12.2 | 14.2 |
-| top 2 retire at 25 | -3.6 ± 0.2 | -2.8 ± 0.1 | 9.6 | 13.0 |
-| top 3 retire at 25 | -4.9 ± 0.2 | -3.9 ± 0.2 | 10.3 | 13.6 |
-| top 4 retire at 25 | -5.6 ± 0.2 | -4.1 ± 0.2 | 10.9 | 14.1 |
-| top 4 retire at 30 | -2.7 ± 0.1 | -2.1 ± 0.1 | 9.4 | 12.8 |
-| top 4 retire at 25, recalled early (needs both coaches' agreement) | +1.4 ± 0.2 | +4.1 ± 0.2 | 5.4 | 9.8 |
+| Option | Runs: U10-like | Runs: U11-like | First stint, minutes | Total time out there, minutes | Weakest batter bats | All nine bat | Weakest batter's balls |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| everyone bats to 35 (conventional) | 0 | 0 | 43 (52) | 47 (59) | 76% | 76% | 8.0 |
+| everyone retires at 30 | -2.9 ± 0.1 | -2.0 ± 0.1 | 39 (47) | 44 (58) | 89% | 88% | 10.1 |
+| everyone retires at 25 | -5.5 ± 0.2 | -3.1 ± 0.2 | 34 (42) | 44 (57) | 98% | 98% | 12.2 |
+| everyone retires at 20 (below the booklet's minimum: needs both coaches' agreement) | -6.8 ± 0.3 | -2.5 ± 0.2 | 29 (37) | 45 (57) | 100% | 99% | 13.0 |
+| top 4 retire at 25 | -5.6 ± 0.2 | -4.1 ± 0.2 | 39 (48) | 44 (56) | 91% | 91% | 10.9 |
+| top 4 retire at 20 (below the minimum: needs agreement) | -9.0 ± 0.2 | -6.2 ± 0.2 | 38 (47) | 44 (56) | 97% | 96% | 12.7 |
+| top 4 retire at 25, recalled early on a cheap wicket (needs both coaches' agreement) | +1.4 ± 0.2 | +4.1 ± 0.2 | 37 (46) | 54 (77) | 58% | 57% | 5.4 |
 
 (The U11-like early-recall figure here, +4.1, comes from a different set of worlds from section
 4b's +3.3; the standard errors understate world-to-world differences like that, so read it as
@@ -286,17 +289,39 @@ between +3 and +4.)
 * **Under the rules as written, every retirement option costs runs**, 2 to 6 a game, because
   retiring takes a good batter off while a weaker one comes on, and the retiree comes back
   only at the end, if there is time.
-* **In return the weakest batters get more balls.** The best value is **everyone retires at
-  25**: in the U11-like world it costs 3.1 runs (about 2.5% of a total) for 4 more balls to the
-  weakest batter and 3 more to the weakest three. Retiring at 30 costs 2.0 runs for 2 more balls,
-  a slightly worse rate. Retiring only the top four costs more (4.1) and gives less (3 more balls to the
-  weakest), because retiring the weaker middle batters is what pushes balls down to the tail.
-* **Early recall is the only option that gains runs, and it takes balls from the weakest**
-  (8.0 to 5.4). If the opposing coach would agree to it, that is a price list entry like the
+* **In return more of the team gets a bat.** Batting to the 35-ball cap, the weakest batter gets in
+  in only 76% of innings (U11-like world). Retiring everyone at 25 makes it
+  98% and lifts their balls from 8.0 to
+  12.2, for 3.1 runs (about 2.5% of a total).
+  Retiring at 30 costs 2.0 runs for 2 more balls,
+  a slightly worse rate. Retiring only the top four costs more and gives less, because retiring the
+  weaker middle batters is what pushes balls down to the tail.
+* **Heat and fatigue (11 Oct 2026, after a coach observed that a batter who lasted 25 balls was out there
+  for about half the innings).** The model now tracks every delivery a batter spends at either end. A batter
+  who lasts to the 35-ball cap has a first stint of about 43 minutes on average
+  and 52 in the upper tail, in line with "half the innings". Retiring at 30
+  shortens that to 39 (47), at 25 to
+  34 (42), at 20 to
+  29 (37). **The total time out there barely
+  changes** (47 minutes against 44 to
+  45), because retirees come back at the end and keep batting. What early
+  retirement buys is a rest in the middle, not less time overall. The booklet says a retiree "may" resume and
+  lets a batter retire again after a further 25 balls; neither is modelled (a returning batter here bats on),
+  so the second-stint figures are on the long side for heat.
+* **Retire at 20 rather than 25.** Below the booklet's 25-ball minimum, so it would need both coaches to agree
+  (the booklet provides extra drinks breaks "in oppressive weather conditions", 17.2(ii), but nothing on
+  retirement). In the model it costs about the same runs as 25 (-2.5 against
+  -3.1, a little less here, though at the U10 scoring rates it costs more, -6.8 against -5.5, so treat the two as similar), gets the weakest batter in 100% of
+  innings against 98%, and shortens the first stint by about
+  5 minutes. A counting point: the 25 includes wides and
+  no-balls, which are about 18% of deliveries this season, so 25 deliveries is only about 20 or 21 legal balls.
+  "Retire after 20 balls" on a scorebook that counts legal balls is therefore already close to the rule.
+* **Early recall is the only option that gains runs, and it takes balls from the weakest** (8.0
+  to 5.4) and keeps
+  the busiest batter out there longer. If the opposing coach would agree to it, that is a price list entry like the
   others; it is not something to assume.
-* This is a menu with prices, not a verdict. How much to pay for the weakest batters' balls is
-  the coach's call; the model's contribution is the exchange rate (in the U11-like world,
-  roughly one run of cost per 1.3 balls given to the weakest batter by retiring everyone at 25).
+* This is a menu with prices, not a verdict. How much to pay for the weakest batters' balls and for the strong
+  batters' rest is the coach's call; the model's contribution is the exchange rate.
 
 ## 5. What would change the answer
 

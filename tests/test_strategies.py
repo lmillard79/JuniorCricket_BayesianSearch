@@ -196,3 +196,27 @@ def test_scenario_labels_show_only_what_differs_from_the_defaults() -> None:
 def test_unknown_strike_rules_are_rejected() -> None:
     with pytest.raises(ValueError):
         S.conditions_for(S.Scenario(strike_rules="sideways"))
+
+
+def test_time_at_the_crease_adds_up_to_two_batters_per_delivery() -> None:
+    orders = {"strongest to weakest": tuple(SQUAD)}
+    with R.Runner([rule(0.2)], workers=1) as runner:
+        res = S.evaluate(runner, orders, SQUAD, S.Scenario(extras_rate=0.18), (0, 20), 2, seed=2,
+                         chunks=2)["strongest to weakest"]
+    assert res["crease"].shape == (20, 2, 9) and res["deliveries"].shape == (20, 2)
+    assert (res["crease"].sum(axis=2) == 2 * res["deliveries"]).all()
+    assert (res["crease"][:, :, 0] <= res["deliveries"]).all()             # nobody is out there longer than the innings
+    assert res["stint"].shape == (20, 2, 9) and (res["stint"] <= res["crease"]).all()
+    assert (res["first_stint"] <= res["stint"]).all()
+
+
+def test_a_retire_at_below_the_booklet_minimum_is_a_what_if_the_engine_accepts() -> None:
+    assert S.conditions_for(S.Scenario(retire_at=20)).retirement_optional_balls == 20
+    assert S.conditions_for(S.Scenario(retire_at=25)).retirement_optional_balls == 25
+    assert S.conditions_for(S.Scenario()).retirement_optional_balls == 25
+    orders = {"strongest to weakest": tuple(SQUAD)}
+    with R.Runner([rule(0.2)], workers=1) as runner:
+        early = S.evaluate(runner, orders, SQUAD, S.Scenario(retire_at=20), (0, 20), 2, seed=2, chunks=2)
+        late = S.evaluate(runner, orders, SQUAD, S.Scenario(retire_at=35), (0, 20), 2, seed=2, chunks=2)
+    best = lambda res: res["strongest to weakest"]["balls"][:, :, 0].mean()       # noqa: E731
+    assert best(early) < best(late)                                               # the best batter leaves sooner

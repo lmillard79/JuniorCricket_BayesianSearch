@@ -416,3 +416,52 @@ def test_batter_who_has_crossed_retires_from_the_non_strikers_end() -> None:
     cards = {c.name: c for c in result.batter_cards}
     assert cards["P0"].retired and cards["P0"].balls == 25
     assert cards["P1"].retired and cards["P1"].balls == 25
+
+
+def test_time_at_the_crease_counts_every_delivery_for_both_batters() -> None:
+    """With only dots, P0 and P1 swap strike each over and retire at 35 balls: 65 and 71 deliveries in."""
+    outcomes = ScriptedOutcomes(runs=0)
+    result = _play_scripted(outcomes)
+    cards = {c.name: c for c in result.batter_cards}
+    assert cards["P0"].balls == 35 and cards["P0"].crease_deliveries == 65
+    assert cards["P1"].balls == 35 and cards["P1"].crease_deliveries == 71
+    assert cards["P0"].longest_stint == 65 and cards["P1"].longest_stint == 71     # one unbroken stint each
+    assert cards["P0"].first_stint == 65 and cards["P1"].first_stint == 71
+    deliveries = sum(b.deliveries for b in result.bowler_cards)
+    assert sum(c.crease_deliveries for c in result.batter_cards) == 2 * deliveries
+
+
+def test_time_at_the_crease_includes_wides_and_a_second_stint() -> None:
+    """Retirees who come back at the end add their second stint to the time they spend out there."""
+    import dataclasses
+
+    short_stints = dataclasses.replace(U11, retirement_optional_balls=10, retirement_mandatory_balls=10)
+    skills = make_skills(p_extra=0.3, p_out=0.0, keepers=())
+    fielding = {p.name: p for p in skills}
+    result = simulate_innings(
+        batting_skills=skills, bowling_skills=fielding, bowling_rotation=[p.name for p in skills],
+        bowling_allocation=standard_allocation(skills), rng=np.random.default_rng(3), conditions=short_stints,
+        outcomes=ScriptedOutcomes(runs=0), retire_at_balls=10)
+    deliveries = sum(b.deliveries for b in result.bowler_cards)
+    assert deliveries > 25 * 6                                 # wides added deliveries
+    assert sum(c.crease_deliveries for c in result.batter_cards) == 2 * deliveries
+    assert any(c.resumed for c in result.batter_cards)        # all nine retired, so the first retirees came back
+    # A second stint adds to the time out there but not to the longest unbroken one.
+    assert any(c.crease_deliveries > c.longest_stint for c in result.batter_cards if c.resumed)
+    assert all(c.longest_stint <= c.crease_deliveries for c in result.batter_cards)
+    # The first stint is cut short by the retirement; the second ran to the end.
+    assert all(0 <= c.first_stint <= c.longest_stint for c in result.batter_cards)
+    assert any(c.first_stint < c.longest_stint for c in result.batter_cards if c.resumed)
+
+
+def test_retiring_at_20_is_a_what_if_the_engine_accepts_once_the_minimum_is_lowered() -> None:
+    """Dots only: P0 faces the odd overs, retires on his 20th ball (delivery 38) and P2 takes his place."""
+    import dataclasses
+
+    outcomes = ScriptedOutcomes(runs=0)
+    result = _play_scripted(outcomes, conditions=dataclasses.replace(U11, retirement_optional_balls=20),
+                            retire_at_balls=20)
+    assert outcomes.strikers[36:40] == ["P0", "P0", "P2", "P2"]
+    assert {c.name: c for c in result.batter_cards}["P0"].retired
+    with pytest.raises(ValueError):                           # without lowering the minimum it is still refused
+        _play_scripted(ScriptedOutcomes(runs=0), retire_at_balls=20)
