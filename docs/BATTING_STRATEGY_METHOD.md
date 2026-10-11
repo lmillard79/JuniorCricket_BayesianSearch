@@ -58,7 +58,7 @@ dismissal ending it (so quick scorers who get out often are not overrated). Then
 | strong-weak alternating | r1 r9 r2 r8 r3 r7 r4 r6 r5 (every pair holds one strong and one weak batter) |
 | balanced pairs (top six) | r1 r6 r2 r5 r3 r4 r7 r8 r9 (strong with weaker, but only among the six who normally bat) |
 | strong-middle alternating | r1 r4 r2 r5 r3 r6 r7 r8 r9 |
-| bank top 4, recall on a cheap wicket | r1 r2 r3 ... r9 (the conventional order), but r1 to r4 may retire not out at 25 balls, and the strongest retired batter comes straight back in, ahead of the next fresh batter, if whoever comes in next is out within 6 balls or for under 5 runs |
+| bank top 4, recall on a cheap wicket | r1 r2 r3 ... r9 (the conventional order), but r1 to r4 may retire not out at 25 balls, and the strongest retired batter comes straight back in, ahead of the next fresh batter, if whoever comes in next is out within 6 balls or for under 5 runs. **Rule 17.9(v) does not allow the early return** (section 4c): it would need both coaches to agree |
 | random orders | a baseline showing what ignoring skill costs |
 | searched order | the best order found by trying every swap of two batters |
 
@@ -130,7 +130,7 @@ at the end of the over only, and nothing changed sign or rank.
    normally bat (balanced pairs) or top-third with middle-third (strong-middle) is close
    to a tie (about a run or less). There is no sign that pairing spreads risk in a way that
    helps.
-4. **Changing the retirement tactics, not the order, is what actually gains runs.**
+4. **Early recall of a banked batter would gain runs, but the booklet does not allow it.**
    "Bank top 4, recall on a cheap wicket" keeps the conventional order but lets the top
    four retire not out at 25 balls and come straight back in, strongest first, if
    whoever replaces them is out cheaply or quickly. It is the only alternative tried
@@ -138,14 +138,18 @@ at the end of the over only, and nothing changed sign or rank.
    a real if modest effect), and it was the *best* alternative in all 37 scenarios
    tested (main plus the 36-scenario grid), ranging from +0.7 to +7.8 runs. It stayed
    positive against every third of opposition attacks (+1.1 to +1.7), with no sign it
-   depends on how strong the attack is.
-5. **That gain is not obviously a participation win.** Balls faced per innings barely
-   move for most of the order, but the best batter gains about 2 balls (20.5 to 22.3)
-   and the weakest loses about 1 (5.4 to 4.4): a recalled top batter uses overs that
-   would otherwise eventually have reached the tail. If the coach's aim is specifically
-   to guarantee the weakest batters more balls (rather than more team runs), this
-   version of the policy is not that; a version that recalls to *protect the weakest*
-   rather than *maximise runs* would need a different recall rule and has not been built.
+   depends on how strong the attack is. **But rule 17.9(v) lets a retired batter resume
+   only "once all other players have been dismissed or retired"**, so bringing one back
+   ahead of a fresh batter needs both coaches to agree (the booklet's own note says
+   "common sense and sportsmanship are to prevail"). Read the figures above as the most
+   early recall could be worth, not as a tactic available by default. I did not check this
+   when the idea was built (22 Sep) and found it on 11 Oct 2026; section 4c prices what the
+   rules do allow.
+5. **That gain is not a participation win.** Balls faced per innings barely move for most
+   of the order, but the best batter gains about 2 balls (20.5 to 22.3) and the weakest
+   loses about 1 (5.4 to 4.4): a recalled top batter uses overs that would otherwise
+   eventually have reached the tail. If the aim is to give the weakest batters more
+   balls, early recall works against it.
 6. **The mechanism for the fixed orders is who gets the balls.** In the conventional
    order the six best batters face 17 to 20 balls each and the three weakest 5 to 12.
    The alternating order pushes 14 to 15 balls onto the weakest batters at the expense
@@ -166,16 +170,16 @@ at the end of the over only, and nothing changed sign or rank.
    batters differ most and a bigger ground removes many boundaries.
 9. **A blanket retirement policy moves totals as much as most order choices.** With the
    same order and the current ground size, retiring *every* batter at 25 rather than 35
-   balls costs about 6 runs (less on a bigger ground), because the best batters are taken
-   off too. Bank-and-recall is the per-batter alternative to that blanket policy: only the
-   top four retire early, and only long enough to see off a cheap wicket.
+   balls costs about 6 runs (3 in a U11-like world), because the best batters are taken
+   off too. That is the retirement lever the rules do allow; section 4c prices it and its
+   variants.
 10. **What a participation guarantee costs, if runs are what matters.** The order that
     guarantees the weakest three at least 14 balls each (strong-weak alternating) costs
-    about 8 runs, roughly 5% of a total. That is a coaching choice about fairness, not
-    something the model can decide, but the model can now put a price on it, and
-    bank-and-recall shows that a *different* kind of fairness lever (giving the coach the
-    retirement choice) does not have to cost runs at all, even though this particular
-    version of it does not target fairness for the weakest batters specifically.
+    about 8 runs, roughly 5% of a total (5 in a U11-like world). That is a coaching choice
+    about fairness, not something the model can decide, but the model can put a price on it.
+    A cheaper lever is retiring everyone at 25: it costs 5.5 runs in the U10-like world and
+    3.1 in the U11-like one, and lifts the weakest three from about 8 to 11 balls (12 to 14
+    in the U11-like world). Section 4c has the full list.
 
 ## 4b. After the first U11 game (Round 1, Sat 10 Oct 2026)
 
@@ -239,14 +243,60 @@ simulated wickets against 6.5 real), and:
 | weakest to strongest | 116.7 | -12.2 ± 0.4 | -19.9 |
 | random orders (12) | | -6.0 on average | -9.6 |
 
-Across the 37 scenarios: bank-and-recall is best in all 37 (+4.5 on average, +2.1 to +7.9);
+Across the 37 scenarios: bank-and-recall (early recall) is best in all 37 (+4.5 on average, +2.1 to +7.9);
 strong-weak alternating is worse in all 37 (-2.9 on average); no fixed-order alternative
 beats the conventional order by more than 0.5 runs. So **the ranking does not change, the
 penalties for reordering shrink (singles are rarer, so order decides fewer balls), and
-bank-and-recall is worth more.** Two cautions: its thresholds (out within 6 balls or for under
+early recall of a banked batter is worth more** (though the rules do not allow it without both
+coaches agreeing, section 4c). Two more cautions: its thresholds (out within 6 balls or for under
 5 runs) were set for U10 scoring, where 5 runs was cheap; at U11 scoring they fire on most weak
 dismissals and are worth re-tuning. And the participation cost grows: the best batter gains
 4 balls (23.1 to 27.3) and the weakest loses 3 (8.1 to 5.4).
+
+## 4c. The retirement options the booklet allows (rule 17.9)
+
+A batter may retire not out from 25 balls (wides and no-balls count) and must at 35, and
+"any not out batter so retired may resume their innings in order of retirement once all
+other players have been dismissed or retired". A retiree therefore cannot come back ahead of a
+fresh batter. Round 1 bears that out: across the six innings with ball-by-ball there were 16
+retirements (Purple four, Bulls White four, Teal six in single innings) and 10 resumptions,
+every one with no fresh batter left. Nobody recalled early. Retirement itself is routine in
+this pool.
+
+What a coach can choose is who retires and when. `scripts/price_retirement.py` plays the
+conventional order with each choice through the same 4,000 worlds (2 innings each) in the
+U10-like world and the U11-like world of section 4b. Runs are against everyone batting to 35
+(± is one standard error); balls are per innings and include wides and no-balls.
+
+| Option | U10-like runs | U11-like runs | U11-like: weakest batter's balls | U11-like: weakest three, mean balls |
+| --- | --- | --- | --- | --- |
+| everyone bats to 35 (conventional) | 0 | 0 | 8.0 | 11.5 |
+| everyone retires at 30 | -2.9 ± 0.1 | -2.0 ± 0.1 | 10.1 | 13.1 |
+| everyone retires at 25 | -5.5 ± 0.2 | -3.1 ± 0.2 | 12.2 | 14.2 |
+| top 2 retire at 25 | -3.6 ± 0.2 | -2.8 ± 0.1 | 9.6 | 13.0 |
+| top 3 retire at 25 | -4.9 ± 0.2 | -3.9 ± 0.2 | 10.3 | 13.6 |
+| top 4 retire at 25 | -5.6 ± 0.2 | -4.1 ± 0.2 | 10.9 | 14.1 |
+| top 4 retire at 30 | -2.7 ± 0.1 | -2.1 ± 0.1 | 9.4 | 12.8 |
+| top 4 retire at 25, recalled early (needs both coaches' agreement) | +1.4 ± 0.2 | +4.1 ± 0.2 | 5.4 | 9.8 |
+
+(The U11-like early-recall figure here, +4.1, comes from a different set of worlds from section
+4b's +3.3; the standard errors understate world-to-world differences like that, so read it as
+between +3 and +4.)
+
+* **Under the rules as written, every retirement option costs runs**, 2 to 6 a game, because
+  retiring takes a good batter off while a weaker one comes on, and the retiree comes back
+  only at the end, if there is time.
+* **In return the weakest batters get more balls.** The best value is **everyone retires at
+  25**: in the U11-like world it costs 3.1 runs (about 2.5% of a total) for 4 more balls to the
+  weakest batter and 3 more to the weakest three. Retiring at 30 costs 2.0 runs for 2 more balls,
+  a slightly worse rate. Retiring only the top four costs more (4.1) and gives less (3 more balls to the
+  weakest), because retiring the weaker middle batters is what pushes balls down to the tail.
+* **Early recall is the only option that gains runs, and it takes balls from the weakest**
+  (8.0 to 5.4). If the opposing coach would agree to it, that is a price list entry like the
+  others; it is not something to assume.
+* This is a menu with prices, not a verdict. How much to pay for the weakest batters' balls is
+  the coach's call; the model's contribution is the exchange rate (in the U11-like world,
+  roughly one run of cost per 1.3 balls given to the weakest batter by retiring everyone at 25).
 
 ## 5. What would change the answer
 
@@ -254,7 +304,7 @@ dismissals and are worth re-tuning. And the participation cost grows: the best b
 | --- | --- | --- |
 | Skill transfer from U10 to U11 | Skills are U10 estimates; a year older and a bigger ground | Refit as U11 games arrive; drift is already in the grid |
 | Boundary size (45 m) | Boundary hitting is the strongest skill and drives the ranking | First U11 game: shift -0.34 [-0.75, +0.03] (section 4b), inside the grid's 0 to -0.7; more games will narrow it |
-| Per-batter retirement | Confirmed allowed by the rules, though not yet used on the day | Done: "bank top 4, recall on a cheap wicket" in the engine and the comparison above |
+| Per-batter retirement | Allowed from 25 balls, but a retiree resumes only once all others are out or retired (17.9(v)); the early recall in sections 4 and 4b needs both coaches' agreement | Done: priced in section 4c; Round 1 shows retirement is routine in the pool and nobody recalled early |
 | Wicketkeepers and fielding | The model was about 10% stingy about our own side | Team fielding effect done (22 Sep 2026): a real but modest edge, 0.17 [-0.15, 0.47] on the dismissal log-odds (81% posterior probability positive), narrowing the gap without closing it (PROJECT_STATUS.md). Individual catches and run outs are recorded per ball too (`player_report.md`'s Fielding table), but only 67 of 172 dismissals name a fielder, too few to fit a per-player effect. A true wicketkeeper flag would still need the coach's own per-game record; PlayHQ does not tag it |
 | Strike rotation | The engine changed ends only at the end of the over | Done (11 Oct 2026): rule 17.4(iv) and the first U11 game both have batters crossing on odd runs and a new batter taking strike after a wicket; engine fixed, conclusions unchanged (section 4b) |
 | In-innings form | Batters are modelled as constant within an innings | Compare runs per ball by balls faced in U11 data |
@@ -273,7 +323,7 @@ from.
 
 | When | What | Output |
 | --- | --- | --- |
-| Done (22 Sep 2026) | Joint ball model; U10 and U11 engines; U10 replay validation; strategy harness with paired worlds, search and stress grid; pilot results above; per-batter bank-and-recall retirement policy in the engine and comparison | This document, `replay_report.html`, `strategy_report.html` |
+| Done (22 Sep 2026) | Joint ball model; U10 and U11 engines; U10 replay validation; strategy harness with paired worlds, search and stress grid; pilot results above; per-batter bank-and-recall retirement policy in the engine and comparison (its early-recall step found on 11 Oct 2026 to need both coaches' agreement; section 4c prices what the rules allow) | This document, `replay_report.html`, `strategy_report.html` |
 | Before Round 1 (Sat 10 Oct 2026) | Team fielding effect added and calibration re-checked (done 22 Sep 2026); wicketkeeper flags if a real per-game signal can be sourced; load the U11 squad (new players get the grade prior); rerun the replay and strategy comparison for the actual squad | A pre-season recommendation with ranges, and a list of the assumptions it rests on |
 | Round 1 (done, 11 Oct 2026) | Fetched both U11 games; Navy's came through complete, White's has team totals only; engine strike rules corrected; first-game shifts turned into scenario dials | Section 4b |
 | Rounds 2 to 4 | After each game, fetch the ball-by-ball (API key when granted, otherwise slowly); refit with a U11 offset for each outcome; run the replay tool on U11 games; compare predicted with actual balls by position and boundary rate | The real test of the transfer assumption |
@@ -299,15 +349,15 @@ absolute totals.
 
 Answered so far (2026-09-22):
 
-1. ~~Can the coach retire an individual batter at any point between 25 and 35 balls?~~ Yes,
-   allowed by the rules, though not yet used on the day. Built as "bank top 4, recall on a
-   cheap wicket" above.
+1. ~~Can the coach retire an individual batter at any point between 25 and 35 balls?~~ Yes
+   (17.9(iv)), though the retiree can resume only once all others are out or retired
+   (17.9(v)). Built as the engine's retirement option, plus an early-recall variant that
+   needs both coaches' agreement (section 4c).
 2. ~~What is the objective: pure runs, or a fairness rule?~~ Participation matters: "everyone
    should get a go", with a preference for banking a strong batter at 25 and bringing them
-   back if a weaker batter is dismissed quickly or cheaply. Built as above, with the caveat
-   in finding 5: the runs-maximising version of this idea shifts a couple of balls *away*
-   from the weakest batter, not toward them, so it is not yet a direct answer to the
-   fairness half of the question.
+   back if a weaker batter is dismissed quickly or cheaply. The bringing-back step is not
+   allowed as written (finding 4) and shifts balls *away* from the weakest batters; the
+   lever that does serve "everyone gets a go" is retiring at 25 or 30, priced in section 4c.
 3. ~~Add the team fielding effect and wicketkeeper flags?~~ Yes, approved, and built
    (22 Sep 2026): the raw PlayHQ data turned out to name the fielder on catches and run
    outs directly (checked properly this time, PROJECT_STATUS.md), so the fielding effect
@@ -320,10 +370,10 @@ Still open:
 4. The 2026/27 U11 squad and any new players, so the comparison is run on the real group.
 5. Who keeps wicket, and can the choice change game to game? PlayHQ's data does not record
    it, so a true keeper flag would need the coach's own per-game note.
-6. Is the runs-maximising bank-and-recall policy (finding 5) an acceptable trade against its
-   fairness goal, or should a version that specifically protects the weakest batters' balls
-   be built instead, even if it costs a little more than +1.3 runs? At U11-like scoring the
-   weakest batter's balls fall from about 8 to 5 under the current thresholds (section 4b).
+6. How much run cost is acceptable for the weakest batters' balls? Section 4c's list: retiring
+   everyone at 25 costs about 3 runs in a U11-like world for 4 more balls to the weakest batter;
+   at 30, about 2 runs for 2 balls. And would you ask the opposing coach to agree to early
+   resumption of a retiree (worth +3 to +4 runs, but it takes balls from the weakest)?
 7. White's Round 1 record: batting order, runs and balls, who bowled and who kept. PlayHQ has
    only the totals for that game (131/4 against 91/7); if whoever scored it did not use
    ball-by-ball scoring, your own record is the only source.
@@ -336,6 +386,8 @@ python scripts/compare_batting_strategies.py --search
 python scripts/compare_batting_strategies.py --search --strike-rules earlier --out data/outputs/strategies_earlier_strike
 # a U11-like world (section 4b)
 python scripts/compare_batting_strategies.py --search --boundary-shift -0.3 --scoring-shift -1.1 --extras-rate 0.18 --out data/outputs/strategies_u11_like
+# the retirement options the booklet allows (section 4c)
+python scripts/price_retirement.py
 ```
 
 Writes `data/outputs/strategies/` (gitignored): `strategy_report.html`, `strategy_results.csv`,

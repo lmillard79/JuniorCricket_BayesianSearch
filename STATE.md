@@ -11,7 +11,7 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
 ## 1. Current status
 
 * Runs end to end on the personal PC (Windows 11, Python 3.14.7, PyMC
-  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 170 passed. No C
+  6.3.2, ArviZ 1.x). `python -m pytest tests/` gives 182 passed. No C
   compiler needed: sampling uses numpyro/JAX.
 * **First U11 data (Round 1, Sat 10 Oct 2026; docs/BATTING_STRATEGY_METHOD.md section
   4b).** Navy 142/7 beat Orange 56/8 (Hartley pool), complete on PlayHQ with ball-by-ball.
@@ -25,7 +25,21 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
   boundaries slightly rarer, dismissals the same (one game: scenario dials
   `--scoring-shift`, `--extras-rate`, `--boundary-shift`, not fitted effects); (3) in that
   U11-like world strongest to weakest still wins among fixed orders and bank-and-recall
-  is worth about +3.3 runs (best in all 37 scenarios).
+  is worth about +3 to +4 runs (best in all 37 scenarios), BUT see the next bullet.
+* **Bank-and-recall's recall step is not allowed as written (found 11 Oct 2026).** Rule
+  17.9(v): a retiree may resume only "once all other players have been dismissed or retired",
+  so recalling a banked batter ahead of a fresh one needs both coaches to agree. I did not
+  check this when it was built on 22 Sep. In Round 1 there were 16 retirements and 10
+  resumptions across six innings, every resumption with no fresh batter left. What the rules
+  allow is priced by `scripts/price_retirement.py` (method note section 4c): in a U11-like world
+  retiring everyone at 25 costs about 3.1 runs and gives the weakest batter 4 more balls
+  (8.0 to 12.2); retiring the top four only costs 4.1 for 3 more.
+* **Smith-pool scouting (11 Oct 2026).** The other pool teams' finished games are cached in
+  `data/smith_pool/`; `scripts/scout_pool.py` builds a private report that names children
+  (`data/smith_pool/outputs/scouting/scouting_report.md`, gitignored, local only). Round 1:
+  Bulls White 156/6 and Bulls Yellow 135 won; WNJCC Purple and Teal lost; Ashgrove (White's
+  Round 2 opponent) had the bye so there is no data yet. Last season Bulls teams beat White or
+  Navy 2 of 3 times, WNJCC teams lost 11 of 11.
 * **Team fielding effect** (new this session): the user corrected an earlier wrong
   claim that PlayHQ's data does not name fielders — it does, in both the scorecard
   stats and the ball-by-ball events feed, the second of which `playhq_parse.py` was
@@ -76,18 +90,19 @@ docs/GUIDE.md. The U11 batting-order method and pathway: docs/BATTING_STRATEGY_M
    re-asks only about recent games that were not FINAL or had empty events; checked at
    12:20 on 11 Oct 2026 and still LIVE with no events). Ask whoever scores White's home
    games to use live ball-by-ball scoring.
-2. **Other pool games.** The Smith pool (White's real opponents: Ashgrove Astronauts,
-   WNJCC Purple and Teal, Bulls White and Yellow, Turquoise) and the Hartley pool (Navy's)
-   would give the right grade for the unknown-opposition prior. A handful of requests per
-   round at 2.5 s spacing. Not started; ask first.
+2. **Weekly routine after each Saturday.** `fetch_scorecards.py --refresh` for the pool
+   teams (`--data-dir smith_pool`, team ids 44faa9cd ba4abc43 2ca59b41 050b5216 a7cd7e29) and
+   for White and Navy, then `scout_pool.py` (see section 3). Ashgrove's first scorecard arrives
+   after Round 2. The Hartley pool (Navy's) is not pulled; ask first. The pool's ball-by-ball
+   should later feed the joint model as the U11 opposition prior.
 3. **U11 refit.** After a few more U11 games, refit the joint model with a U11 offset on each
    outcome and a wides rate instead of the fixed scenario dials, and compare predicted with
    actual balls by batting position. A U11 version of `replay_games.py` does not exist yet
    (the replay engine is U10-only).
-4. **Bank-and-recall.** Re-tune the recall thresholds for U11 scoring (under 5 runs is no
-   longer cheap), and build the fairness-weighted variant (protect the weakest batters'
-   balls) if that is what the coach wants; at U11-like scoring the weakest batter's balls
-   fall from about 8 to 5 under the current rule.
+4. **Retirement policy.** Agree with the coach what run cost is acceptable for the weakest
+   batters' balls (method note section 4c has the price list) and whether the opposing
+   coach would agree to early resumption of a retiree. The engine's early-recall thresholds
+   (6 balls, 5 runs) were set at U10 scoring; re-tune them only if early recall is on the table.
 5. **Wicketkeeper flags.** `is_wicketkeeper` already exists in the player registry and
    `PlayerSkills`, but only feeds bowling-tier allocation, not dismissal modelling. PlayHQ
    does not record who kept (checked properly: it does record catches and run outs, now
@@ -112,6 +127,11 @@ python scripts/name_report.py data/outputs/lineup_recommendation.md
 python scripts/replay_games.py --team-id 75cdae66 --team-id fafdb4c4
 python scripts/compare_batting_strategies.py --search
 python scripts/compare_batting_strategies.py --search --boundary-shift -0.3 --scoring-shift -1.1 --extras-rate 0.18 --out data/outputs/strategies_u11_like
+python scripts/price_retirement.py                  # what the retirement rules allow, priced (under a minute)
+# scouting the pool (after each Saturday); the report names children, keep it local
+python scripts/fetch_scorecards.py --data-dir smith_pool --refresh --team-id 44faa9cd --team-id ba4abc43 --team-id 2ca59b41 --team-id 050b5216 --team-id a7cd7e29
+python scripts/fetch_scorecards.py --data-dir u11_white --refresh --team-id 2320bb54
+python scripts/scout_pool.py
 # 2026/27 U11 pulls (each in its own folder; seeded with the U10 alias maps); --refresh
 # picks up new rounds and unfinished games, and is what to run after each Saturday
 python scripts/fetch_scorecards.py --team-id 2320bb54 --data-dir u11_white --refresh
@@ -158,6 +178,11 @@ Drop it (and set `--max-games 3`) to fetch, slowly.
   merged back into `data/` or `data/navy/`, copy the maps back first, or the numbering
   diverges. U11 events carry wides and no-balls as their own events (`icon` WD or NB, no
   score), which `playhq_parse.py` files under "not understood": harmless for the ball model.
+* **The scouting report names children.** `data/smith_pool/outputs/scouting/` is under the
+  gitignored `data/`; never commit or post it. Its processed CSVs (`data/smith_pool/processed/`)
+  are NOT clean model inputs: `fetch_scorecards.py` treats each team id as "ours", so a game
+  between two pool teams is processed twice with different aliases. Scouting reads the raw
+  cache only; dedupe before ever modelling from those CSVs.
 * **Strike options.** `U11` has `batters_cross_on_runs` and `incoming_batter_takes_strike`
   both True. `compare_batting_strategies.py --strike-rules earlier` (or
   `dataclasses.replace(U11, ...)` with both False) reproduces the engine as it was before

@@ -58,6 +58,12 @@ TEST_WORLDS = (100_000, 104_000)                 # never used for tuning
 # straight back in, strongest first, ahead of the next fresh batter, if
 # whoever comes in next is out within RECALL_WITHIN_BALLS balls or for under
 # RECALL_BELOW_RUNS runs. Everyone else bats on as usual.
+#
+# NOT ALLOWED AS WRITTEN (found 11 Oct 2026): rule 17.9(v) lets a retired batter resume only
+# "once all other players have been dismissed or retired", so recalling a banked batter ahead
+# of the next fresh batter needs both coaches to agree. This row is kept as the upper bound on
+# what early recall could be worth. The retirement options the booklet does allow (retire at 25
+# to 35 balls, return at the end) are priced by scripts/price_retirement.py.
 BANK_NAME = "bank top 4, recall on a cheap wicket"
 BANK_SIZE = 4
 RECALL_WITHIN_BALLS = 6
@@ -405,6 +411,10 @@ in next is out within {RECALL_WITHIN_BALLS} balls or for under {RECALL_BELOW_RUN
 batter comes straight back in, ahead of the next fresh batter. Everyone else bats until out or the mandatory
 35-ball cap, as usual. Its "retire at" figure in the tables below is always 25, regardless of what the column
 or scenario says for the other strategies, since that is the rule being tested, not an assumption to sweep.</p>
+<p><b>Not allowed as written.</b> Rule 17.9(v) lets a retired batter resume only "once all other players have been
+dismissed or retired", so bringing a banked batter back ahead of a fresh one would need both coaches to agree. Read
+this row as the most early recall could be worth, not as a tactic available by default. The options the booklet does
+allow (retiring at 25 to 35 balls and returning at the end) are priced by <code>scripts/price_retirement.py</code>.</p>
 <h3>How to read the tables and charts</h3>
 <ul>
 <li><b>Mean total, SD</b>: the average and spread of our innings total across worlds.</li>

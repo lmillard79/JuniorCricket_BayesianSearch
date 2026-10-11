@@ -32,7 +32,9 @@ games arrive, and White's own Round 1 record (PlayHQ has only its totals).**
 | Player report and private name translation | Done | `scripts/player_report.py`, `scripts/name_report.py` |
 | **Game replays and decision studies** (U10) | Done. Over-by-over charts, percentile of each recorded result, batting-order and bowling-split studies | `replay.py`, `replay_plots.py`, `scripts/replay_games.py` |
 | **U11 batting-order strategies** | Done as a pilot, re-run 11 Oct 2026 with corrected strike rules and dials for the first U11 game's scoring and extras. Paired worlds, named strategies, swap search on fresh worlds, 36-scenario stress grid | `strategies.py`, `scripts/compare_batting_strategies.py` |
-| Tests | 170 passing | `tests/` |
+| Pool scouting from public scorecards (private, names children) | Done. Per-player lines, shrunk ratings, U10 history, White's draw | `scouting.py`, `scripts/scout_pool.py` |
+| Retirement options priced (rule 17.9) | Done | `scripts/price_retirement.py` |
+| Tests | 182 passing | `tests/` |
 
 ## Real data
 
@@ -230,17 +232,24 @@ the user's own framing of the policy: the top 4 batters may retire not out at 25
 balls instead of batting on; the strongest currently-banked batter is recalled
 immediately, ahead of the next fresh batter, if whoever comes in next is out within
 6 balls or for under 5 runs (both thresholds are illustrative defaults, not fitted).
-Result: **+1.3 ± 0.2 runs** against strongest to weakest in the main scenario, and
+**Correction, 11 Oct 2026: the recall step is not allowed as written.** Rule 17.9(v)
+lets a retiree resume only "once all other players have been dismissed or retired",
+so bringing a banked batter back ahead of a fresh one needs both coaches to agree. I
+did not check this when it was built. Round 1 bears the rule out: 16 retirements and
+10 resumptions across six innings, every resumption with no fresh batter left. The
+figures below are therefore the most early recall could be worth; the options the
+rules allow (retire everyone, or the top few, at 25 or 30 balls, retirees returning
+at the end) are priced by `scripts/price_retirement.py` and in the method note's
+section 4c. Result: **+1.3 ± 0.2 runs** against strongest to weakest in the main scenario, and
 the best alternative in **all 37 scenarios tested** (main plus the 36-scenario
 grid), ranging +0.7 to +7.8. It stayed positive against every third of opposition
 attacks (+1.1 to +1.7), with no sign it depends on how strong the attack is.
 Balls-by-rank shows the gain comes from the best batter facing about 2 more balls
 (20.5 to 22.3) at the expense of about 1 fewer for the weakest (5.4 to 4.4): the
-runs-maximising version of the policy is not, by itself, a direct answer to
-"everyone should get a go"; a fairness-weighted recall rule (protect the weakest
-batters' balls rather than maximise runs) has not been built. Retiring *every*
-batter at 25 rather than 35 (no bankable subset) still costs about 6 runs at the
-current ground size.
+runs-maximising version of the policy is not a participation lever (early recall works
+against it). Retiring *every* batter at 25 rather than 35 costs about 6 runs at the
+U10 scoring rates and about 3 in a U11-like world, where it lifts the weakest batter
+from about 8 to 12 balls: the cheapest lever the rules allow for "everyone gets a go".
 
 **Team fielding effect: built 22 Sep 2026** (see the joint ball model section above for
 the result, 0.17 [-0.15, 0.47] on the dismissal log-odds, 81% probability positive).
@@ -284,11 +293,36 @@ Full write-up with tables: `docs/BATTING_STRATEGY_METHOD.md`, section 4b. In sho
   squad's mean total falls from 152 to 129 (the four real innings averaged 105);
   strongest to weakest still beats every fixed alternative; strong-weak alternating
   costs 4.9 rather than 7.9 runs; bank-and-recall is worth +3.3 ± 0.2 (+4.5 on
-  average over the 37 scenarios, best in all of them), though its thresholds were set
-  for U10 scoring and its participation cost grows (weakest batter's balls 8 to 5).
+  average over the 37 scenarios, best in all of them), though that early recall needs
+  both coaches' agreement (17.9(v)), its thresholds were set for U10 scoring and it takes
+  balls from the weakest batter (8 to 5). What the rules allow costs 2 to 4 runs in that
+  world (retire everyone at 25: 3.1 runs, 4 more balls to the weakest batter).
 * **Pools.** White is in U11 Smith with Turquoise (a VDCC sibling, met in Rounds 1 and
   8), Ashgrove Astronauts, WNJCC Purple and Teal, and Bulls White and Yellow. Navy is
   in U11 Hartley with VDCC Maroon and Orange. Different grades, so not pooled.
+
+## The Smith pool (scouting; pulled 11 Oct 2026)
+
+White's pool is seven teams: VDCC Turquoise and White, Ashgrove Astronauts, WNJCC Purple and
+Teal, Bulls White and Yellow (Toombul District). `scripts/fetch_scorecards.py --data-dir
+smith_pool` cached the other teams' fixtures and finished games (two, complete with ball-by-ball
+and FINAL scorecards); `scripts/scout_pool.py` turns the cached scorecards into a private report
+(`data/smith_pool/outputs/scouting/`, names children, gitignored) of per-player lines, ratings
+shrunk toward the pool average, U10 history against White and Navy where a player has one
+(11 of 38 players, all Bulls Yellow or Teal), White's draw and a team-by-team breakdown.
+
+* **Round 1.** Bulls White 156/6 beat WNJCC Purple 108/4; Bulls Yellow 135 (all out, 17.1
+  overs) beat WNJCC Teal 105/7; White 131/4 beat Turquoise 91/7. All three were 22-over
+  games. Both Bulls sides scored 7.1 and 7.9 an over against 4 to 6 for the rest. Bulls Yellow's
+  bowlers conceded 43 extras in the game: extras are a large share of U11 totals.
+* **Next opponent.** Ashgrove (Round 2, White at home) had the bye, so there is nothing to
+  go on until they play. The Bulls are met in Rounds 5 and 6.
+* **Last season's evidence for the Bulls.** As opponents of White or Navy in U10 2025/26,
+  Bulls teams won 2 of 3 (averaging 160 to our 135); WNJCC teams lost all 11 (104 to our 156).
+* **Retirement is routine here.** 16 retirements and 10 resumptions across the six
+  innings with ball-by-ball; Teal retired six batters in one innings. See the correction under
+  "Per-batter retirement" above.
+* Everyone has played one game or fewer, so the ratings are a shortlist to watch.
 
 ## Caveats that matter for 2026/27
 
@@ -344,15 +378,14 @@ convention, needing an explicit `our_names` argument (now auto-detected by
 1. White's Round 1 record. PlayHQ has only the totals; the coach's own note of the
    batting order, runs and balls, bowlers and keepers would let it enter the U11 data.
    Re-check PlayHQ's scorecard later in case the scorer finalises it.
-2. Pull the other Smith-pool games (White's actual opponents) and Hartley-pool games for
-   Navy as they are played: a handful of requests per round at 2.5 s spacing, and the
-   right grade for the unknown-opposition prior. Not done yet; it needs a go-ahead.
-3. After a few more U11 games: refit the joint model with a U11 offset on each outcome
-   (and a wides rate) instead of fixed scenario dials, and compare predicted with actual
-   balls by batting position.
-4. Re-tune bank-and-recall's recall thresholds for U11 scoring (5 runs is no longer
-   "cheap"), and build the fairness-weighted variant that protects the weakest batters'
-   balls, if that is what is wanted.
+2. After each Saturday: `fetch_scorecards.py --refresh` for the pool teams and White,
+   then `scout_pool.py`. Ashgrove's first scorecard arrives after Round 2.
+3. Decide the retirement policy with the coach: the price list is in the method note's
+   section 4c (retire everyone at 25 costs about 3 runs in a U11-like world for 4 more balls
+   to the weakest batter). Ask whether the opposing coach would agree to early resumption.
+4. After a few more U11 games: refit the joint model with a U11 offset on each outcome
+   (and a wides rate) instead of the fixed scenario dials, and compare predicted with actual
+   balls by batting position. Feed the pool's ball-by-ball in as the U11 opposition prior.
 5. Wire wicketkeeper flags into the pipeline, if the coach can supply who kept each game.
 6. Fetch the two missing White U10 games and 2024/25 (API key, or slowly later).
 7. If the Navy friend (or Nick) wants to keep using this, build the U11 batting-strategy
@@ -373,6 +406,9 @@ convention, needing an explicit `our_names` argument (now auto-detected by
 - The 4-run U10 penalty goes to the fielding side's total (Rule 16.10(vi)).
 - Extras: not modelled for U10 where none were recorded; for U11 they are a scenario dial
   (`--extras-rate`, one run each, counted toward the 25 and 35-ball limits).
+- Retirement follows rule 17.9: optional from 25 balls, mandatory at 35, a retiree resumes only once
+  all other players are out or retired. The engine's early "recall" is kept as an upper bound on what
+  agreement between coaches could be worth, flagged as not allowed as written.
 - Strike rules follow rule 17.4(iv) and the first U11 game (batters cross on odd runs and
   rotate at the end of the over; a new batter takes strike after a wicket), kept as two
   switchable options on the playing conditions so the first pilot can be reproduced.

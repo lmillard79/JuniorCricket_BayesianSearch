@@ -27,15 +27,22 @@ to run code to follow it; the commands are collected in section 7.
      tried, including strong-weak pairings, across a wide range of assumptions.
      The one thing that beat it was not a different order: letting the top four
      retire at 25 balls and recalling the strongest one straight back in if the
-     next batter is out cheaply gained about 1.3 runs, in every scenario tested.
+     next batter is out cheaply gained about 1.3 runs, in every scenario tested. But
+     rule 17.9(v) lets a retiree resume only once everyone else is out or retired, so
+     that early recall needs both coaches to agree. What the rules do allow (retiring
+     at 25 or 30 and returning at the end) costs a few runs and gives the weakest
+     batters more balls; the method note's section 4c has the price list.
      See [BATTING_STRATEGY_METHOD.md](BATTING_STRATEGY_METHOD.md).
   4. The first U11 game (Round 1, 10 Oct 2026) tested two assumptions. Batters do
      cross on odd runs (the engine had them rotate at the end of the over only; fixed,
      and it changed no conclusion). And U11 scoring looks different from U10: scoring
      shots about half as common, wides and no-balls about 18% of deliveries. In a world
-     with those, the conventional order still wins among fixed orders and the
-     bank-and-recall tactic is worth about 3 runs. One game, so a scenario to test,
-     not a fitted result (method note, section 4b).
+     with those, the conventional order still wins among fixed orders and early
+     recall of a banked batter is worth about 3 to 4 runs (if both coaches agreed).
+     One game, so a scenario to test, not a fitted result (method note, section 4b).
+  5. The other teams in the pool can be scouted from their public scorecards
+     (section 4.9). After Round 1 the Bulls sides look strongest, as last season's
+     U10 results against White and Navy also suggested.
 
 ## 2. How the pieces fit together
 
@@ -309,7 +316,10 @@ One row, `bank top 4, recall on a cheap wicket`, is not a different order at all
 keeps the conventional order but lets the top four retire not out at 25 balls and
 brings the strongest one straight back in, ahead of the next fresh batter, if whoever
 comes in next is out within 6 balls or for under 5 runs. It is the only alternative
-that gained runs rather than lost them.
+that gained runs rather than lost them, but rule 17.9(v) does not allow the early
+return without both coaches agreeing, so read that row as the most early recall could be
+worth. `price_retirement.py` (method note, section 4c) prices the options the rules do
+allow: who retires at 25 or 30 balls, with retirees returning at the end.
 
 A second table splits the same comparison by how strong the opposition attack was (the
 strongest, middle and weakest thirds of the simulated worlds; `strategy_by_attack_strength.csv`).
@@ -336,6 +346,35 @@ lists every parameter with its posterior mean, SD, 89% interval and the fit-heal
 columns (`ess_bulk`, `r_hat`). `search_history.csv` is every batting order and bowling
 configuration the optimiser tried with its score. `run_differential.png` is the
 histogram of simulated margins for the recommended lineup.
+
+### 4.9 `scouting/` (from `scripts/scout_pool.py`)
+
+A private report on the other teams in White's pool, built only from public PlayHQ scorecards
+that `fetch_scorecards.py` has already cached. **It names children, so it stays under the
+gitignored `data/smith_pool/outputs/` and is never committed or posted.**
+
+- **The pool so far**: each team's results, runs an over for and against, and extras
+  conceded a game (wides and no-balls, which are a large share of U11 totals).
+- **White's draw**: each round's opponent, home or away, and what is known about them. A team
+  that has not played yet (or whose scorer did not use full scoring) shows as nothing to go on.
+- **Players to watch**: batters ranked by the **30-ball value** (the expected runs of a stint of
+  up to 30 balls that a dismissal ends, from runs and dismissals per ball, each blended with 20
+  balls of average play), and bowlers by rated runs an over and wickets in a four-over spell
+  (blended with 12 balls of average bowling). With one game a player has 10 to 30 balls, so the
+  blending dominates and the ranking is a shortlist to watch, not a verdict.
+- **U10 against White or Navy**: where a player was an opponent last season, their 2025/26
+  record, shown beside the rating and not mixed into it, because U11 scoring is lower.
+- **Team by team**, in the order White meets them: each player's runs (balls) with `*` not out
+  and `ret` retired not out, fours, bowling figures with extras, catches and the rating.
+
+Rerun after each Saturday (the first two commands re-ask PlayHQ only about new rounds and
+unfinished games):
+
+```bash
+python scripts/fetch_scorecards.py --data-dir smith_pool --refresh --team-id 44faa9cd --team-id ba4abc43 --team-id 2ca59b41 --team-id 050b5216 --team-id a7cd7e29
+python scripts/fetch_scorecards.py --data-dir u11_white --refresh --team-id 2320bb54
+python scripts/scout_pool.py
+```
 
 ## 5. A worked example: reading one game
 
@@ -427,6 +466,9 @@ python scripts/replay_games.py --team-id 75cdae66 --team-id fafdb4c4
 python scripts/compare_batting_strategies.py --search
 # ... in a U11-like world (settings from the first U11 game)
 python scripts/compare_batting_strategies.py --search --boundary-shift -0.3 --scoring-shift -1.1 --extras-rate 0.18 --out data/outputs/strategies_u11_like
+
+# 7. what the retirement rules allow, priced (under a minute)
+python scripts/price_retirement.py
 ```
 
 Drop `--offline` (and add `--max-games 3`) to fetch new games from PlayHQ, slowly. It

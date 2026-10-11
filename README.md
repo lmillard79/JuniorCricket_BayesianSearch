@@ -264,6 +264,8 @@ python scripts/optimise_lineup.py --posterior data/outputs/posterior_model.nc --
 python scripts/player_report.py --squad P01,P03,P04,P05,P06,P07,P08,P09,P10 --named
 python scripts/replay_games.py --team-id 75cdae66 --team-id fafdb4c4
 python scripts/compare_batting_strategies.py --search
+python scripts/price_retirement.py
+python scripts/scout_pool.py
 ```
 
 `replay_games.py` rebuilds every real U10 game and plays it thousands of times, showing
@@ -274,7 +276,11 @@ one set of replays and judged on a fresh set. `compare_batting_strategies.py` pl
 U11 batting-order strategies (and a swap search) through the same thousands of simulated
 worlds of unknown opposition, tactics and ground, then repeats over a grid of assumptions
 about the move to U11. Both write HTML reports under `data/outputs/` (gitignored). How to
-read them: [docs/GUIDE.md](docs/GUIDE.md).
+read them: [docs/GUIDE.md](docs/GUIDE.md). `price_retirement.py` prices the retirement
+options rule 17.9 allows (retire from 25 balls, retirees return only once everyone else is out
+or retired). `scout_pool.py` reads the cached public scorecards of the other teams in White's
+pool and writes a private report rating their players; it names children, so it stays under
+`data/` (gitignored) and is never committed.
 
 `fit_ball_model.py` fits the **joint batter-by-bowler ball model**, which is the
 recommended basis for player and lineup statements: each ball's outcome depends
